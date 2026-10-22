@@ -25,6 +25,11 @@ object Voices {
         val label get() = "$name  ·  $version · ${sr / 1000} kHz" + if (hasIndex) " · index" else ""
     }
 
+    /** What was unpacked from a download / picked file: the model and, if the zip had one, its faiss index. */
+    class Source(val pth: File, val index: File?)
+    /** [indexNote] is set when an index was supplied but could not be used (the voice is still added, without it). */
+    class Added(val voice: Voice, val indexNote: String?)
+
     private lateinit var app: Context
     fun init(c: Context) { app = c.applicationContext }
     val root get() = File(app.filesDir, "voices").apply { mkdirs() }
@@ -57,8 +62,10 @@ object Voices {
         if (Settings.voiceId == id) Settings.voiceId = ""
     }
 
-    /** Converts [pth] into a new voice. Throws with a readable message. Slow part is the NPU compile on first Load. */
-    fun addFromPth(pth: File, name: String, say: (String) -> Unit): Voice {
+    /** Converts [src] (a .pth, optionally with its faiss .index) into a new voice. Throws with a readable message.
+     *  Slow part is the NPU compile on first Load. */
+    fun addVoice(src: Source, name: String, say: (String) -> Unit): Added {
+        val pth = src.pth
         say("Reading the voice file…")
         val info = NativeBridge.nativeInspectPth(pth.absolutePath).split("|", limit = 6)
         if (info[0] != "ok") throw Exception(info.getOrElse(1) { "unreadable file" })
@@ -71,6 +78,7 @@ object Voices {
         val id = name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(24).ifEmpty { "voice" } +
             "-" + System.currentTimeMillis().toString(36)
         val dir = File(root, id).apply { mkdirs() }
+        var indexNote: String? = null
         try {
             say("Converting weights on the phone…")
             val err = NativeBridge.nativeImportPth(pth.absolutePath, tpl.absolutePath, dir.absolutePath, 0)
@@ -103,8 +111,21 @@ object Voices {
                 .put("synth.onnx", ent(synthSha)).toString())
             File(dir, "config.json").writeText(JSONObject().put("version", ver).put("tgt_sr", sr).toString())
             File(dir, "voice.json").writeText(JSONObject().put("name", name).toString())
+            if (src.index != null) {
+                // A bad index must not lose the voice: the model is added anyway and the reason is reported.
+                say("Converting the index…")
+                val r = NativeBridge.nativeImportIndex(src.index.absolutePath, File(dir, "index.bin").absolutePath,
+                    if (ver == "v2") 768 else 256).split("|", limit = 3)
+                if (r[0] == "ok") {
+                    val cfg = File(dir, "engine.cfg")
+                    cfg.writeText(cfg.readText().replace("has_index 0", "has_index 1"))
+                } else {
+                    File(dir, "index.bin").delete()
+                    indexNote = r.getOrElse(1) { "unreadable index" }
+                }
+            }
         } catch (e: Throwable) { dir.deleteRecursively(); throw e }
-        return read(id, dir, name)
+        return Added(read(id, dir, name), indexNote)
     }
 
     private fun baseManifest() = runCatching { JSONObject(File(base, "manifest.json").readText()) }.getOrDefault(JSONObject())
@@ -185,8 +206,9 @@ object Voices {
         part.renameTo(dest)
     }
 
-    /** Downloads [url] (Hugging Face "blob" links are rewritten to direct links). A .zip is searched for its .pth. */
-    fun download(url: String, say: (String) -> Unit): File {
+    /** Downloads [url] (Hugging Face "blob" links are rewritten to direct links). A .zip is searched for its .pth
+     *  and its faiss .index. */
+    fun download(url: String, say: (String) -> Unit): Source {
         var u = url.trim().replace("/blob/", "/resolve/")
         require(u.startsWith("http://") || u.startsWith("https://")) { "Enter a full http(s) link" }
         val fname = u.substringBefore('?').substringAfterLast('/').ifEmpty { "voice.pth" }
@@ -205,30 +227,44 @@ object Voices {
                 if (done - last > (1 shl 20)) { last = done; say("Downloading… ${done shr 20}" + if (total > 0) " / ${total shr 20} MB" else " MB") }
             }
         } }
-        if (!fname.endsWith(".zip", true)) return dest
-        say("Unpacking zip…")
-        val out = File(tmp, "voice.pth")
-        ZipInputStream(dest.inputStream()).use { z ->
-            var best = -1L
-            var found = false
-            // pick the first .pth that is not a discriminator ("D_*.pth")
-            while (true) {
-                val e = z.nextEntry ?: break
-                val n = e.name.substringAfterLast('/')
-                if (e.isDirectory || !n.endsWith(".pth", true) || n.startsWith("D_")) continue
-                out.outputStream().use { z.copyTo(it) }; found = true; best = out.length(); break
-            }
-            if (!found) throw Exception("No .pth found inside the zip")
-        }
-        dest.delete()
-        return out
+        if (!fname.endsWith(".zip", true)) return Source(dest, null)
+        return unzipBundle(dest, tmp, say)
     }
 
-    fun copyPicked(uri: Uri): File {
+    /** First usable .pth (not a "D_*" discriminator) and the best .index ("added_*" preferred, "trained_*" never:
+     *  a trained index holds no vectors). Both may sit in sub-folders. */
+    private fun unzipBundle(zip: File, tmp: File, say: (String) -> Unit): Source {
+        say("Unpacking zip…")
+        val pth = File(tmp, "voice.pth"); val idx = File(tmp, "voice.index")
+        var havePth = false; var haveIdx = false; var idxAdded = false
+        ZipInputStream(zip.inputStream()).use { z ->
+            while (true) {
+                val e = z.nextEntry ?: break
+                if (e.isDirectory) continue
+                val n = e.name.substringAfterLast('/'); val low = n.lowercase()
+                if (low.endsWith(".pth")) {
+                    if (havePth || n.startsWith("D_")) continue
+                    pth.outputStream().use { z.copyTo(it) }; havePth = true
+                } else if (low.endsWith(".index")) {
+                    if (low.startsWith("trained")) continue
+                    val added = low.startsWith("added")
+                    if (haveIdx && (idxAdded || !added)) continue
+                    idx.outputStream().use { z.copyTo(it) }; haveIdx = true; idxAdded = added
+                }
+            }
+        }
+        zip.delete()
+        if (!havePth) throw Exception("No .pth found inside the zip")
+        return Source(pth, if (haveIdx) idx else null)
+    }
+
+    /** A picked .pth, or a picked .zip (unpacked like a download). */
+    fun copyPicked(uri: Uri, say: (String) -> Unit): Source {
         val tmp = File(app.cacheDir, "pick_" + System.currentTimeMillis()).apply { mkdirs() }
-        val f = File(tmp, "voice.pth")
+        val isZip = displayName(uri).endsWith(".zip", true)
+        val f = File(tmp, if (isZip) "bundle.zip" else "voice.pth")
         app.contentResolver.openInputStream(uri)!!.use { i -> f.outputStream().use { i.copyTo(it) } }
-        return f
+        return if (isZip) unzipBundle(f, tmp, say) else Source(f, null)
     }
 
     fun displayName(uri: Uri): String = app.contentResolver.query(uri, null, null, null, null)?.use {

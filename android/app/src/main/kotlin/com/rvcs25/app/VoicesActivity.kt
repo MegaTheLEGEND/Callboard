@@ -44,13 +44,14 @@ class VoicesActivity : Activity() {
         root.addView(list)
 
         root.addView(text("Add a voice", 18f, 24))
-        root.addView(text("Paste a link to a .pth (or a .zip containing one, e.g. a Hugging Face file link), or pick a .pth from the phone. " +
+        root.addView(text("Paste a link to a .pth or a .zip, or pick one from the phone. A .zip may hold the model (.pth) and its " +
+            "retrieval index (.index): the voice is named after the file, and the Index rate slider then works for it. " +
             "Pitch-guided (f0) v1/v2 voices only.", 12f, 2).apply { setTextColor(dim) })
         url = EditText(this).apply { hint = "Link to .pth or .zip"; setSingleLine(); textSize = 14f }
         name = EditText(this).apply { hint = "Voice name (optional)"; setSingleLine(); textSize = 14f }
         root.addView(url); root.addView(name)
         btnGo = Button(this).apply { text = "Download & add"; isAllCaps = false; setOnClickListener { fromUrl() } }
-        btnPick = Button(this).apply { text = "Choose .pth from phone"; isAllCaps = false
+        btnPick = Button(this).apply { text = "Choose .pth or .zip from phone"; isAllCaps = false
             setOnClickListener { if (!busy) startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), 1) } }
         root.addView(btnGo); root.addView(btnPick)
 
@@ -78,7 +79,7 @@ class VoicesActivity : Activity() {
         val uri = data?.data
         if (req != 1 || res != RESULT_OK || uri == null) return
         val nm = name.text.toString().trim().ifEmpty { Voices.displayName(uri).substringBeforeLast('.') }
-        run(nm) { say -> say("Copying…"); Voices.copyPicked(uri) }
+        run(nm) { say -> say("Copying…"); Voices.copyPicked(uri, say) }
     }
 
     private fun fromUrl() {
@@ -88,17 +89,19 @@ class VoicesActivity : Activity() {
         run(nm) { say -> Voices.download(u, say) }
     }
 
-    private fun run(nm: String, getFile: ((String) -> Unit) -> File) {
+    private fun run(nm: String, getFile: ((String) -> Unit) -> Voices.Source) {
         if (busy) return
         busy = true; btnGo.isEnabled = false; btnPick.isEnabled = false
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val say = { s: String -> ui.post { status.text = s }; Unit }
         Thread {
             try {
-                val f = getFile(say)
-                val v = Voices.addFromPth(f, nm, say)
-                Settings.voiceId = v.id
-                say("Added “${v.name}” (${v.version}). Next: go back and tap “Load model” (first load compiles for the NPU).")
+                val src = getFile(say)
+                val r = Voices.addVoice(src, nm, say)
+                Settings.voiceId = r.voice.id
+                say("Added “${r.voice.name}” (${r.voice.version}${if (r.voice.hasIndex) ", with index" else ""}). " +
+                    "Next: go back and tap “Load model” (first load compiles for the NPU)." +
+                    (r.indexNote?.let { "\nThe index couldn’t be used ($it), so the voice was added without it." } ?: ""))
             } catch (e: Throwable) { say("Couldn’t add voice: ${e.message}") }
             finally {
                 Voices.cleanTemp()

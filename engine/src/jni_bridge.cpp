@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "engine.h"
+#include "index_import.h"
 #include "oboe_io.h"
 #include "pth_import.h"
 #include "voice_session.h"
@@ -130,6 +131,14 @@ JNIEXPORT jstring JNICALL Java_dev_callboard_rvc_NativeBridge_nativeBakeSynth(
   std::string e;
   if (!rvc::pth_bake(to_str(env, jtpl), to_str(env, jweights), to_str(env, jout), &e)) return env->NewStringUTF(e.c_str());
   return env->NewStringUTF("");
+}
+
+// faiss .index -> index.bin. "ok|vectors|dim" or "err|message".
+JNIEXPORT jstring JNICALL Java_dev_callboard_rvc_NativeBridge_nativeImportIndex(
+    JNIEnv* env, jobject, jstring jin, jstring jout, jint dim) {
+  int n = 0, d = 0; std::string e;
+  if (!rvc::index_import(to_str(env, jin), to_str(env, jout), dim, &n, &d, &e)) return env->NewStringUTF(("err|" + e).c_str());
+  return env->NewStringUTF(("ok|" + std::to_string(n) + "|" + std::to_string(d)).c_str());
 }
 
 // [0] samples per engine block at 48 kHz   [1] output lookahead in samples (offline alignment)

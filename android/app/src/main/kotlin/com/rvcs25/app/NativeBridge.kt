@@ -16,6 +16,8 @@ object NativeBridge {
     external fun nativeImportPth(pth: String, templateDir: String, outDir: String, sid: Int): String
     /** Writes [outOnnx] = the template synth with this voice's weights (from [weightsBin]) patched in. "" = ok. */
     external fun nativeBakeSynth(templateOnnx: String, weightsBin: String, outOnnx: String): String
+    /** faiss .index -> index.bin in the engine format. "ok|vectors|dim" or "err|message". [dim]: 768 (v2) / 256 (v1). */
+    external fun nativeImportIndex(indexFile: String, outBin: String, dim: Int): String
 
     /** [0] samples per engine block at 48 kHz, [1] output lookahead in samples (offline alignment). */
     external fun nativeInfo(): IntArray

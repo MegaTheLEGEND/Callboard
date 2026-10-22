@@ -16,6 +16,7 @@ set(CORE_SRC
   src/retrieval.cpp
   src/ort_graph.cpp
   src/pth_import.cpp
+  src/index_import.cpp
   src/engine.cpp
   src/voice_session.cpp)
 
@@ -51,6 +52,8 @@ else()
   add_executable(test_dsp tests/test_dsp.cpp src/dsp.cpp src/retrieval.cpp)
   target_link_libraries(test_dsp Threads::Threads)
   add_executable(test_pth_import tests/test_pth_import.cpp src/pth_import.cpp)
+  add_executable(test_index_import tests/test_index_import.cpp src/index_import.cpp src/retrieval.cpp)
+  target_link_libraries(test_index_import Threads::Threads)
   add_executable(test_ring tests/test_ring.cpp)
   target_link_libraries(test_ring Threads::Threads)
   add_executable(test_session tests/test_session.cpp src/voice_session.cpp)

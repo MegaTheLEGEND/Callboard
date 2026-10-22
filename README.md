@@ -74,8 +74,13 @@ or choose a `.pth` from storage → **Download & add** → back on the main scre
 itself (no pickle code is run), folds weight-norm, picks speaker 0 and hands the weights to the template; HuBERT/FCPE
 are shared and compiled once, only the new voice's synth compiles for the NPU (minutes, first load only).
 Downloads need mobile data or Wi-Fi (the app's “Wi-Fi off at startup” option can be switched off in Settings).
-Limits: f0 (pitch-guided) voices only; the `.index` retrieval file is not imported on-device yet (Index rate stays 0);
-voices whose architecture differs from the installed template are rejected with a message.
+**Index (retrieval).** Add a `.zip` that holds the model and its index (`name.zip` = `model.pth` + `model.index`) by link or
+from the phone: the voice is named after the zip, and the faiss `added_IVF…_Flat….index` is converted on the phone to the
+engine's `index.bin` (`engine/src/index_import.cpp`, no faiss needed) so the Index rate slider works for it. A `trained_…` index
+is ignored (it holds no vectors). If the index can't be used (wrong model, unsupported type) the voice is still added without it
+and the reason is shown. A bare `.pth` still imports without an index.
+
+Limits: f0 (pitch-guided) voices only; voices whose architecture differs from the installed template are rejected with a message.
 
 ### Settings and startup defaults
 
