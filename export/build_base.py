@@ -112,24 +112,49 @@ def build_template(version: str, cfg: list, args, fcpe: dict, out_dir: str) -> N
     lines += [f"fcpe_bins {fcpe['bins']}", f"fcpe_threshold {fcpe['threshold']}", f"fcpe_half_window {fcpe['half_window']}"]
     open(os.path.join(out_dir, "template.cfg"), "w").write("\n".join(lines) + "\n")
 
-    # ---- self-test: random weights injected into the template must reproduce PyTorch exactly
+    # ---- self-test: weights injected into the template by name must reproduce PyTorch
+    in_names = ["feats", "pitch", "har", "noise"]
+    in_arrays = [t.numpy() for t in inputs]
+
+    def run_ort(vals):
+        so = ort.SessionOptions(); keep = []
+        if vals is not None:
+            for n, _ in over:
+                keep.append(ort.OrtValue.ortvalue_from_numpy(vals[n].detach().numpy().astype(np.float32)))
+                so.add_initializer(n, keep[-1])
+        return ort.InferenceSession(path, so, providers=["CPUExecutionProvider"]).run(None, dict(zip(in_names, in_arrays)))[0]
+
     with torch.no_grad():
-        for p in core.parameters():
-            p.add_(0.02 * torch.randn_like(p))
-        ref = core(*inputs).numpy()
-    so = ort.SessionOptions()
-    sd = core.state_dict()
-    keep = []
-    for n, _ in over:
-        keep.append(ort.OrtValue.ortvalue_from_numpy(sd[n].detach().numpy().astype(np.float32)))
-        so.add_initializer(n, keep[-1])
-    sess = ort.InferenceSession(path, so, providers=["CPUExecutionProvider"])
-    out = sess.run(None, dict(zip(["feats", "pitch", "har", "noise"], [t.numpy() for t in inputs])))[0]
-    err = float(np.abs(out - ref).max())
-    print(f"[template {version}_{sr}] {len(over)} overridable weights, self-test max|err|={err:.2e} "
-          f"(max|ref|={float(np.abs(ref).max()):.2e})")
-    if err > 2e-3:
-        raise SystemExit("self-test FAILED: some weights are not reachable by name (derived constants in the graph)")
+        base = {n: p_.detach().clone() for n, p_ in core.named_parameters()}
+        # (a) the exported file itself, no overrides: does the graph match PyTorch at all?
+        err0 = float(np.abs(run_ort(None) - core(*inputs).numpy()).max())
+        gen2 = torch.Generator().manual_seed(7)
+
+        def perturb(only=None):
+            for n, p_ in core.named_parameters():
+                p_.copy_(base[n])
+                if only is None or n.startswith(only):
+                    p_.mul_(1 + 0.05 * torch.randn(p_.shape, generator=gen2)).add_(1e-3 * torch.randn(p_.shape, generator=gen2))
+
+        def trial(only=None):
+            perturb(only)
+            ref = core(*inputs).numpy()
+            return float(np.abs(run_ort(core.state_dict()) - ref).max()), float(np.abs(ref).max())
+
+        err, refmax = trial()
+        print(f"[template {version}_{sr}] {len(over)} overridable weights; baseline(no overrides) max|err|={err0:.2e}; "
+              f"override self-test max|err|={err:.2e} (max|ref|={refmax:.2e})")
+        if err > 2e-3 or err0 > 2e-3:
+            if err0 > 2e-3:
+                print("  -> the exported graph already differs from PyTorch WITHOUT any override (tracing/export issue, not naming)")
+            groups = sorted({".".join(n.split(".")[:4]) for n, _ in over})
+            bad = []
+            for gname in groups:
+                e, _ = trial(gname)
+                if e > 2e-3:
+                    bad.append((gname, e))
+            print("  per-group max|err| (only that group perturbed):", ", ".join(f"{g}={e:.1e}" for g, e in bad) or "none above tol")
+            raise SystemExit("self-test FAILED (see per-group report above)")
 
 
 def main() -> None:
