@@ -104,6 +104,7 @@ JNIEXPORT jstring JNICALL Java_dev_callboard_rvc_NativeBridge_nativeCreate(
   g.session = std::make_unique<rvc::VoiceSession>(
       e->block_samples(), rvc::Engine::kDeviceSr,
       [e](const float* in, float* out) { e->process_block(in, out); });
+  g.session->set_gain_source(&e->params.mic_gain);
   g.io = std::make_unique<rvc::OboeIO>(g.session.get());
   LOGI("engine ready: block=%d samples, floor=%.0f ms", e->block_samples(), e->latency_floor_ms());
   return env->NewStringUTF("");
@@ -275,12 +276,20 @@ JNIEXPORT void JNICALL Java_dev_callboard_rvc_NativeBridge_nativeSetParams(
   g.engine->params.synth_noise = synth_noise;
 }
 
+// Mic gain in dB (0 = unchanged). Applied to every mic source before the engine; safe to call any time.
+JNIEXPORT void JNICALL Java_dev_callboard_rvc_NativeBridge_nativeSetMicGain(JNIEnv*, jobject, jfloat db) {
+  if (!g.engine) return;
+  g.engine->params.mic_gain = std::pow(10.f, std::min(std::max(db, -24.f), 36.f) / 20.f);
+}
+
 // [0]total [1]pitch||hubert [2]hubert [3]retrieval+pitchpost [4]synth [5]post
 // [6]underruns [7]dropped [8]slack [9]out_level [10]in_level [11]latency floor [12]block ms
 // [13]audio in lat [14]audio out lat [15]exclusive [16]disconnected [17]ctx cached(all NPU graphs)
 // [18]mic peak 0..1 since last call [19]session running
+// [20]voice has an index loaded [21]index vectors [22]index used in the last block [23]feature shift (0..1+)
+// [24]index search+blend ms
 JNIEXPORT jfloatArray JNICALL Java_dev_callboard_rvc_NativeBridge_nativeStats(JNIEnv* env, jobject) {
-  float v[20] = {0};
+  float v[25] = {0};
   if (g.engine && g.session) {
     auto t = g.engine->last();
     auto s = g.session->stats();
@@ -297,9 +306,14 @@ JNIEXPORT jfloatArray JNICALL Java_dev_callboard_rvc_NativeBridge_nativeStats(JN
              g.engine->npu_cached("fcpe_net")) ? 1.f : 0.f;
     v[18] = s.in_peak;
     v[19] = g.session->running() ? 1.f : 0.f;
+    v[20] = g.engine->index_loaded() ? 1.f : 0.f;
+    v[21] = float(g.engine->index_count());
+    v[22] = g.engine->index_ran() ? 1.f : 0.f;
+    v[23] = g.engine->index_shift();
+    v[24] = g.engine->index_ms();
   }
-  jfloatArray out = env->NewFloatArray(20);
-  env->SetFloatArrayRegion(out, 0, 20, v);
+  jfloatArray out = env->NewFloatArray(25);
+  env->SetFloatArrayRegion(out, 0, 25, v);
   return out;
 }
 

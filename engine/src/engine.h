@@ -33,6 +33,7 @@ struct RuntimeParams {
   std::atomic<float> index_rate{0.5f};     // 0 disables retrieval (saves ~10 ms)
   std::atomic<float> gate_db{-60.f};       // input noise gate; <= -60 disables
   std::atomic<bool> synth_noise{true};     // false = deterministic, slightly cleaner
+  std::atomic<float> mic_gain{1.f};        // linear input gain, applied by VoiceSession before the engine sees the mic
 };
 
 struct StageTimes {  // milliseconds, last block
@@ -64,6 +65,13 @@ class Engine {
   StageTimes last() const { return last_; }
   bool npu_cached(const char* tag) const;
 
+  // Retrieval (index) diagnostics, for the stats panel.
+  bool index_loaded() const { return pc_.has_index && index_.loaded(); }
+  int index_count() const { return index_.count(); }
+  bool index_ran() const { return index_ran_.load(std::memory_order_relaxed); }    // last block used the index
+  float index_shift() const { return index_shift_.load(std::memory_order_relaxed); }  // |blended - original| / |original|
+  float index_ms() const { return index_ms_.load(std::memory_order_relaxed); }        // time of the k-NN search + blend
+
  private:
   void run_fcpe();
 
@@ -88,6 +96,9 @@ class Engine {
   std::vector<int64_t> pitch_;
   std::vector<float> pitchf_, har_, sine_noise_, noise_, audio_, wav48_;
   StageTimes last_;
+  std::atomic<bool> index_ran_{false};
+  std::atomic<float> index_shift_{0.f}, index_ms_{0.f};
+  std::vector<float> blend_pre_;
 };
 
 }  // namespace rvc

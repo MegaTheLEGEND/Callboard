@@ -1,5 +1,6 @@
 #include "voice_session.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -43,11 +44,26 @@ void VoiceSession::stop() {
 }
 
 void VoiceSession::on_input(const float* mono, int n) {
+  const float gain = gain_src_ ? gain_src_->load(std::memory_order_relaxed) : 1.f;
   float pk = 0.f;
-  for (int i = 0; i < n; ++i) { const float a = std::fabs(mono[i]); if (a > pk) pk = a; }
+  if (gain == 1.f) {
+    for (int i = 0; i < n; ++i) { const float a = std::fabs(mono[i]); if (a > pk) pk = a; }
+    in_.write(mono, size_t(n));
+  } else {
+    float buf[512];  // scale in small chunks: no allocation on the audio thread
+    for (int off = 0; off < n; off += 512) {
+      const int k = std::min(512, n - off);
+      for (int i = 0; i < k; ++i) {
+        float v = mono[off + i] * gain;
+        v = v > 1.f ? 1.f : (v < -1.f ? -1.f : v);
+        buf[i] = v;
+        const float a = std::fabs(v); if (a > pk) pk = a;
+      }
+      in_.write(buf, size_t(k));
+    }
+  }
   float cur = in_peak_.load(std::memory_order_relaxed);
   while (pk > cur && !in_peak_.compare_exchange_weak(cur, pk, std::memory_order_relaxed)) {}
-  in_.write(mono, size_t(n));
 }
 
 void VoiceSession::on_output(float* y, int n) {

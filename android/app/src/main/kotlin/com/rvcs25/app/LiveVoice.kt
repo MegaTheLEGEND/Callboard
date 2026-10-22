@@ -35,7 +35,7 @@ object LiveVoice {
 
     /** Returns "" on success, otherwise a message. */
     @Synchronized
-    fun start(ctx: Context, slackMs: Int, rate: Int, shellMic: Boolean, unprocessed: Boolean): String {
+    fun start(ctx: Context, slackMs: Int, rate: Int, shellMic: Boolean, unprocessed: Boolean, inputDevice: Int = 0): String {
         stop()
         appCtx = ctx.applicationContext
         val svc: IShell = RvcApp.link.service ?: return "Shizuku helper not connected (start Shizuku, tap Grant Shizuku)"
@@ -51,12 +51,14 @@ object LiveVoice {
             upOut = ParcelFileDescriptor.AutoCloseOutputStream(up[1])
 
             // Microphone: prefer the helper (a normal app's mic can be silenced during a cellular call).
+            // A specific input device (Bluetooth, USB, ...) can only be captured by the app's own mic path: the
+            // helper's recorder cannot be pointed at a device.
             var shellOk = false
-            if (shellMic) shellOk = startShellMic(svc, unprocessed)
+            if (shellMic && inputDevice == 0) shellOk = startShellMic(svc, unprocessed)
             if (!shellOk) {
-                err = NativeBridge.nativeStartAppMic(0, unprocessed)
+                err = NativeBridge.nativeStartAppMic(inputDevice, unprocessed)
                 if (err.isNotEmpty()) throw IllegalStateException("app mic: $err")
-                micMode = "app mic (Oboe)"
+                micMode = if (AudioInputs.active.isNotEmpty()) "app mic: ${AudioInputs.active}" else "app mic (Oboe)"
             }
 
             active = true

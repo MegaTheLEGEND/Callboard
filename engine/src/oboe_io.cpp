@@ -60,6 +60,15 @@ bool OboeIO::start(int input_device, int output_device, bool unprocessed_mic, bo
       ->setDataCallback(in_cb_)
       ->setErrorCallback(in_cb_);
   oboe::Result r = ib.openStream(in_);
+  if (r != oboe::Result::OK && input_device != 0) {
+    // A specific device (Bluetooth hands-free, USB, ...) often cannot do low-latency / exclusive / unprocessed capture.
+    LOGI("input open failed (%s), retrying relaxed for device %d", oboe::convertToText(r), input_device);
+    in_.reset();
+    ib.setPerformanceMode(oboe::PerformanceMode::None)
+        ->setSharingMode(oboe::SharingMode::Shared)
+        ->setInputPreset(oboe::InputPreset::VoiceCommunication);
+    r = ib.openStream(in_);
+  }
   if (r != oboe::Result::OK) {
     if (err) *err = std::string("open input: ") + oboe::convertToText(r);
     return false;

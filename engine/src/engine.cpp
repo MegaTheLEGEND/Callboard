@@ -232,10 +232,24 @@ void Engine::process_block(const float* in48, float* out48) {
 
   // 3. retrieval: only the frames that survive skip_head are blended -----------
   const float rate = params.index_rate.load(std::memory_order_relaxed);
+  bool index_used = false;
   if (c.has_index && rate > 0.f) {
     const int first = c.skip_head / 2, total = c.hubert_frames + 1;
-    if (total > first) index_.blend(feats_.data() + size_t(first) * D, total - first, rate, 2);
+    if (total > first) {
+      float* f = feats_.data() + size_t(first) * D;
+      const size_t cnt = size_t(total - first) * size_t(D);
+      if (blend_pre_.size() < cnt) blend_pre_.resize(cnt);
+      std::memcpy(blend_pre_.data(), f, cnt * sizeof(float));
+      const auto tb = Clock::now();
+      index_.blend(f, total - first, rate, 2);
+      index_ms_.store(ms_since(tb), std::memory_order_relaxed);
+      double num = 0, den = 0;  // how far the retrieved neighbours moved the features
+      for (size_t i = 0; i < cnt; ++i) { const double d = double(f[i]) - double(blend_pre_[i]); num += d * d; den += double(blend_pre_[i]) * blend_pre_[i]; }
+      index_shift_.store(float(std::sqrt(num / (den + 1e-12))), std::memory_order_relaxed);
+      index_used = true;
+    }
   }
+  index_ran_.store(index_used, std::memory_order_relaxed);
   last_.retrieval = ms_since(t);
 
   // 4. excitation + noise on the CPU, then the vocoder on the NPU ---------------

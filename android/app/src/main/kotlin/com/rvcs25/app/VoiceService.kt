@@ -25,6 +25,7 @@ class VoiceService : Service() {
             Thread {
                 runCatching { LiveVoice.stop() }
                 runCatching { NativeBridge.nativeStop() }
+                AudioInputs.release(applicationContext)
                 running = false
                 mode = ""
             }.start()
@@ -51,9 +52,12 @@ class VoiceService : Service() {
         val app = applicationContext
         Thread({
             val err = try {
-                if (live) LiveVoice.start(app, slack, rate, shellMic, raw)
-                else NativeBridge.nativeStart(0, 0, slack, raw)   // 0 = system default devices
+                val dev = AudioInputs.activate(app)                 // 0 = system default microphone
+                val unprocessed = raw && !AudioInputs.viaComm       // a Bluetooth mic has no "unprocessed" mode
+                if (live) LiveVoice.start(app, slack, rate, shellMic, unprocessed, dev)
+                else NativeBridge.nativeStart(dev, 0, slack, unprocessed)
             } catch (t: Throwable) { "native start failed: ${t.message}" }
+            if (err.isNotEmpty()) AudioInputs.release(app)
             if (err.isEmpty()) {
                 running = true
             } else {
@@ -70,6 +74,7 @@ class VoiceService : Service() {
     override fun onDestroy() {
         runCatching { LiveVoice.stop() }
         runCatching { NativeBridge.nativeStop() }
+        AudioInputs.release(applicationContext)
         running = false
         mode = ""
         super.onDestroy()

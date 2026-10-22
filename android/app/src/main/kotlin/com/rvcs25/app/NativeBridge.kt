@@ -42,6 +42,9 @@ object NativeBridge {
     external fun nativeConvertBegin(): Int
     external fun nativeConvertBlock(input: ShortArray, output: ShortArray): Boolean
 
+    /** Mic gain in dB, applied before the engine (all mic sources). */
+    external fun nativeSetMicGain(db: Float)
+
     external fun nativeSetParams(pitchSemitones: Float, indexRate: Float, gateDb: Float, synthNoise: Boolean)
 
     /** See jni_bridge.cpp: [0] total ms ... [18] mic peak 0..1 since the last call, [19] session running. */

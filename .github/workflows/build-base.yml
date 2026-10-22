@@ -10,6 +10,11 @@ on:
       bake:
         description: "which of those to bake INTO the APK (each adds ~100 MB; HuBERT adds ~370 MB per v1/v2)"
         default: "v2_40000 v1_40000"
+      build_type:
+        description: "debug = app-debug.apk (debuggable: adb run-as works); release = RvcS25.apk"
+        type: choice
+        options: [debug, release]
+        default: debug
 permissions:
   contents: write
 jobs:
@@ -93,11 +98,16 @@ jobs:
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon -Dorg.gradle.jvmargs=-Xmx3g
+          ./gradlew ${{ inputs.build_type == 'release' && 'assembleRelease' || 'assembleDebug' }} --no-daemon -Dorg.gradle.jvmargs=-Xmx3g
       - name: Collect APK
-        run: cp android/app/build/outputs/apk/release/*.apk release/RvcS25.apk
+        run: |
+          if [ "${{ inputs.build_type }}" = "release" ]; then
+            cp android/app/build/outputs/apk/release/*.apk release/RvcS25.apk; echo "APK=RvcS25.apk" >> "$GITHUB_ENV"
+          else
+            cp android/app/build/outputs/apk/debug/*.apk release/app-debug.apk; echo "APK=app-debug.apk" >> "$GITHUB_ENV"
+          fi
       - uses: actions/upload-artifact@v4
-        with: { name: RvcS25-apk, path: release/RvcS25.apk, compression-level: 0 }
+        with: { name: apk, path: "release/${{ env.APK }}", compression-level: 0 }
       - name: Publish release
         env: { GH_TOKEN: "${{ github.token }}" }
-        run: gh release create "build-${{ github.run_number }}" release/* --title "RVC S25 build ${{ github.run_number }}" --notes "RvcS25.apk has the base models baked in. The other files are base models the app downloads on demand."
+        run: gh release create "build-${{ github.run_number }}" release/* --title "RVC S25 build ${{ github.run_number }}" --notes "${{ env.APK }} has the base models baked in. The other files are base models the app downloads on demand."

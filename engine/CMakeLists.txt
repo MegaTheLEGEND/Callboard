@@ -10,6 +10,11 @@ endif()
 # NOTE: deliberately no -ffast-math: fmod/nearbyint/NaN semantics matter for the
 # sine source and pitch quantisation (they are unit-tested against Python).
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+if(ANDROID AND NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+  # A debuggable APK must still run the voice engine at full speed: Gradle's debug variant would build it -O0,
+  # which is far too slow for real-time audio. Only the Java/Kotlin side is a debug build.
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
+endif()
 
 set(CORE_SRC
   src/dsp.cpp

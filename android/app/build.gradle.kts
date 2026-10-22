@@ -62,6 +62,13 @@ android {
             isMinifyEnabled = false
             signingConfig = signingConfigs.findByName("ci") ?: signingConfigs.getByName("debug")   // sideload build
         }
+        // app-debug.apk: debuggable, so `adb shell run-as com.rvcs25.app ...` can read files/voices etc.
+        // Signed like release (CI key if provided) so the two install over each other. The native engine is still
+        // built optimised (see engine/CMakeLists.txt); only the Java/Kotlin side is a debug build.
+        debug {
+            isDebuggable = true
+            signingConfig = signingConfigs.findByName("ci") ?: signingConfigs.getByName("debug")
+        }
     }
 }
 

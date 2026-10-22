@@ -22,6 +22,8 @@ class SettingsActivity : Activity() {
     private var micRow: View? = null
     private var micValue: TextView? = null
     private var pathValue: TextView? = null
+    private var micDevRow: View? = null
+    private var micDevValue: TextView? = null
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private val dim = 0xFF9AA0A6.toInt()
@@ -49,11 +51,28 @@ class SettingsActivity : Activity() {
             Settings.wifiOff,
         ) { Settings.wifiOff = it }
 
+        // ------------------------------------------------------------- Microphone
+        section("Microphone")
+        micDevRow = choice(
+            "Input device",
+            "Phone mic, Bluetooth headphones, a Bluetooth watch, a hands-free kit, wired or USB. Connect the device in Android’s " +
+                "Bluetooth settings first, then pick it here. Applies on the next Start.",
+            currentDeviceName(),
+        ) { value -> micDevValue = value }.also { row -> row.setOnClickListener { pickInputDevice() } }
+        slider(
+            max = 36, init = Settings.micGainDb + 12,
+            label = { "Mic gain: %+d dB  (×%.1f)".format(it - 12, Math.pow(10.0, (it - 12) / 20.0)) },
+            help = "Boost a quiet mic (Bluetooth headsets are often quiet). Watch “mic peak” on the main screen: " +
+                "1.00 means the signal is clipping, so turn it down.",
+        ) { Settings.micGainDb = it - 12 }
+        root.addView(note("A specific device uses the app’s own mic, not the Shizuku helper mic, because the helper can’t choose a device. " +
+            "Bluetooth mics are narrow-band (8–16 kHz), so expect a duller input than the phone mic."))
+
         // -------------------------------------------------------------- Live call
         section("Live call")
         toggle(
             "Capture mic through the Shizuku helper",
-            "Off = use the app’s own microphone (also what you want for a Bluetooth mic).",
+            "Off = use the app’s own microphone (what you want for a Bluetooth mic; pick the device under Microphone).",
             Settings.shellMic,
         ) { Settings.shellMic = it; refreshMicRow() }
 
@@ -187,6 +206,27 @@ class SettingsActivity : Activity() {
     // ------------------------------------------------------------------- choices
     private fun currentMicName() = Settings.MIC_NAMES[Settings.MIC_IDS.indexOf(Settings.micSource).coerceAtLeast(0)]
 
+    private fun currentDeviceName(): String {
+        if (Settings.micDeviceKey.isEmpty()) return "Automatic (system default)"
+        val d = AudioInputs.selected(this)
+        return if (d != null) d.label else "${Settings.micDeviceName} (not connected, using the default)"
+    }
+
+    private fun pickInputDevice() {
+        val devs = AudioInputs.list(this)
+        val names = listOf("Automatic (system default)") + AudioInputs.labels(devs)
+        val cur = AudioInputs.selected(this)?.let { s -> devs.indexOfFirst { it.key == s.key } + 1 } ?: 0
+        AlertDialog.Builder(this).setTitle("Input device")
+            .setSingleChoiceItems(names.toTypedArray(), cur) { d, which ->
+                AudioInputs.choose(if (which == 0) null else devs[which - 1])
+                micDevValue?.text = currentDeviceName()
+                if (AudioInputs.btPermissionMissing(this)) requestPermissions(arrayOf(android.Manifest.permission.BLUETOOTH_CONNECT), 7)
+                d.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun pickMicSource() {
         val checked = Settings.MIC_IDS.indexOf(Settings.micSource).coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("Helper mic source")
@@ -216,6 +256,8 @@ class SettingsActivity : Activity() {
                 }.show()
         }
     }
+
+    override fun onResume() { super.onResume(); micDevValue?.text = currentDeviceName() }
 
     /** The mic-source row only matters while helper capture is on. */
     private fun refreshMicRow() {

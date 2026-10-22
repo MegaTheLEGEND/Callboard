@@ -46,6 +46,8 @@ class VoiceSession {
 
   // real-time safe (called from audio threads)
   void on_input(const float* mono, int n);
+  // Linear mic gain (read on every callback). Output is hard-limited to +-1; the stats peak is measured after the gain.
+  void set_gain_source(const std::atomic<float>* g) { gain_src_ = g; }
   void on_output(float* mono, int n);
 
   SessionStats stats() const;
@@ -61,6 +63,7 @@ class VoiceSession {
   std::atomic<uint32_t> underruns_{0}, dropped_{0}, out_overflows_{0};
   std::atomic<float> slack_now_ms_{0};
   mutable std::atomic<float> in_peak_{0};
+  const std::atomic<float>* gain_src_ = nullptr;
   float slack_ms_ = 20, adapt_step_ms_ = 10, adapt_max_ms_ = 80;
 };
 

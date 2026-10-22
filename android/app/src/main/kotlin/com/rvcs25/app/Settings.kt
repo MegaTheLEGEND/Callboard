@@ -58,6 +58,11 @@ object Settings {
     var slack by IntPref("slack", 40, 0, 100)
     var synthNoise by BoolPref("synthNoise", true)
     var rawMic by BoolPref("rawMic", true)
+    /** Mic gain in dB, -12..+24 (0 = unchanged). Applied to every mic source before the voice engine. */
+    var micGainDb by IntPref("micGainDb", 0, -12, 24)
+    /** Chosen input device (AudioInputs key: type|address|name); "" = system default. */
+    var micDeviceKey by StrPref("micDeviceKey", "")
+    var micDeviceName by StrPref("micDeviceName", "")
 
     val gateDb: Float get() = if (gate == 0) -60f else -(60f - gate)
 

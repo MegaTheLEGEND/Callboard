@@ -35,6 +35,8 @@ class MainActivity : Activity() {
     private lateinit var helper: TextView
     private lateinit var skPitch: SeekBar
     private lateinit var skIndex: SeekBar
+    private lateinit var skGain: SeekBar
+    private lateinit var lblGain: TextView
     private lateinit var lblPitch: TextView
     private lateinit var lblIndex: TextView
 
@@ -115,7 +117,8 @@ class MainActivity : Activity() {
         // Quick controls; both are saved, so they come back the way you left them.
         lblPitch = label(""); skPitch = slider(24, Settings.pitch + 12) { Settings.pitch = it - 12; updateLabels(); pushParams() }
         lblIndex = label(""); skIndex = slider(100, Settings.indexRate) { Settings.indexRate = it; updateLabels(); pushParams() }
-        listOf(lblPitch, skPitch, lblIndex, skIndex).forEach { root.addView(it) }
+        lblGain = label(""); skGain = slider(36, Settings.micGainDb + 12) { Settings.micGainDb = it - 12; updateLabels(); pushParams() }
+        listOf(lblPitch, skPitch, lblIndex, skIndex, lblGain, skGain).forEach { root.addView(it) }
 
         stats = TextView(this).apply {
             typeface = android.graphics.Typeface.MONOSPACE; textSize = 12f; setPadding(0, dp(14), 0, 0)
@@ -132,6 +135,8 @@ class MainActivity : Activity() {
     private fun updateLabels() {
         lblPitch.text = "Pitch: %+d semitones".format(skPitch.progress - 12)
         lblIndex.text = "Index rate (voice similarity): ${skIndex.progress}%"
+        val gdb = skGain.progress - 12
+        lblGain.text = "Mic gain: %+d dB  (×%.1f)".format(gdb, Math.pow(10.0, gdb / 20.0))
     }
 
     private fun pushParams() {
@@ -139,6 +144,7 @@ class MainActivity : Activity() {
         NativeBridge.nativeSetParams(
             Settings.pitch.toFloat(), Settings.indexRate / 100f, Settings.gateDb, Settings.synthNoise,
         )
+        NativeBridge.nativeSetMicGain(Settings.micGainDb.toFloat())
     }
 
     override fun onResume() {
@@ -162,6 +168,7 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             need += Manifest.permission.POST_NOTIFICATIONS
+        if (AudioInputs.btPermissionMissing(this)) need += Manifest.permission.BLUETOOTH_CONNECT   // Bluetooth mic selected
         if (need.isNotEmpty()) requestPermissions(need.toTypedArray(), 1)
     }
 
@@ -268,7 +275,20 @@ class MainActivity : Activity() {
                             .format(s[1], s[3], s[4], s[5]))
                         append("health   underruns %d | dropped %d | exclusive audio: %s | NPU cache: %s\n"
                             .format(s[6].toInt(), s[7].toInt(), if (s[15] > 0) "yes" else "no", if (s[17] > 0) "hit" else "miss (first run)"))
-                        if (s.size > 18) append("mic      peak %.2f  (%s)\n".format(s[18], LiveVoice.micMode.ifEmpty { "-" }))
+                        if (s.size >= 25) {
+                            val rate = Settings.indexRate; val n = s[21].toInt()
+                            append("index    " + when {
+                                s[20] <= 0f -> "none in this voice (add a .zip with the .pth and its .index)"
+                                rate == 0 -> "loaded (%,d vectors) but Index rate is 0, so it is not used".format(n)
+                                s[22] > 0f -> "ON · %,d vectors · rate %d%% · features shifted %.0f%% · %.1f ms".format(n, rate, s[23] * 100f, s[24])
+                                else -> "ready · %,d vectors · rate %d%% (used once audio is running)".format(n, rate)
+                            } + "\n")
+                        }
+                        if (s.size > 18) {
+                            val dev = LiveVoice.micMode.ifEmpty { AudioInputs.active.ifEmpty { "-" } }
+                            append("mic      peak %.2f%s  (%s)\n".format(s[18], if (s[18] >= 0.99f) "  CLIPPING: lower the gain" else "", dev))
+                            if (AudioInputs.note.isNotEmpty()) append("         ${AudioInputs.note}\n")
+                        }
                     }
                 }
             }

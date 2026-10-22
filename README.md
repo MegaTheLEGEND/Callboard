@@ -61,7 +61,7 @@ Use wired/USB headphones for the lowest latency (Bluetooth adds 100+ ms) and to 
 **Base models + APK — no PC needed.** Push this project to GitHub and run *Actions → Build base models + APK*
 (`.github/workflows/build-base.yml`; ~1-2 h, free). It exports HuBERT v1/v2, FCPE and a synth template per variant, **bakes
 the ones listed in the `bake` input (default v2_40000 + v1_40000) into the APK**, builds the APK, and publishes everything as a Release.
-Install `RvcS25.apk` from the release (it is ~1 GB with the defaults). Voices of those types work offline immediately; any other
+Install `app-debug.apk` from the release (the workflow's `build_type` input defaults to *debug*; choose *release* to get `RvcS25.apk` instead). The debug build is debuggable, so `adb shell run-as com.rvcs25.app ls files/voices` works; a debug and a release APK are signed with the same key only if you set the CI keystore secrets, otherwise uninstall one before installing the other (that clears the app's voices) (it is ~1 GB with the defaults). Voices of those types work offline immediately; any other
 type is fetched on demand from the same release: in the app, *Voices → Base models*, enter `owner/repo`.
 Optional secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` keep the signing key stable between builds,
 so a new APK installs over the old one and keeps your voices (without them each build has a new key: uninstall first).
@@ -104,7 +104,13 @@ take effect when you reload the model; the main screen tells you when a reload i
 * The stats panel shows compute vs the block budget. `OK` means compute < 80 % of the block.
 * Crackling → raise *Output safety buffer*, or rebuild with a larger `--block`.
 * Too much delay → lower the safety buffer, rebuild with `--block 8`, lower `--extra` (less context, slightly worse quality).
-* *Index rate* trades voice similarity vs articulation; 0 skips retrieval entirely.
+* *Index rate* trades voice similarity vs articulation; 0 skips retrieval entirely. The stats panel shows whether it is really being used:
+  `index ON · N vectors · rate R% · features shifted S% · T ms` (S is how far the retrieved neighbours moved the HuBERT features; 0% = no
+  effect), or why not (`none in this voice`, `Index rate is 0`).
+* *Mic gain* (main screen and Settings, −12…+24 dB) is applied to every mic source before the engine; the `mic peak` line is measured
+  after the gain and flags clipping. *Input device* (Settings → Microphone) picks the phone mic, Bluetooth headphones / watch /
+  hands-free kit, wired or USB mic by name; Bluetooth ones are routed through Android's communication device (needs the
+  “Nearby devices” permission). A specific device uses the app mic path, not the Shizuku helper mic.
 
 ## Troubleshooting
 
