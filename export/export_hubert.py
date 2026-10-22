@@ -62,8 +62,8 @@ def load_model(hubert_dir: str | None, random_init: bool):
         model, info = HubertModelWithFinalProj.from_pretrained(hubert_dir, local_files_only=True, output_loading_info=True,
                                                                torch_dtype=torch.float32, **kw)
         # Weights that fail to load stay RANDOM and give hiss / beep-boop output, so refuse to export.
-        miss = [k for k in info["missing_keys"] if "masked_spec_embed" not in k]
-        print("[hubert] missing keys:", miss, "| unexpected:", info["unexpected_keys"][:10])
+        miss = [k for k in list(info.get("missing_keys", [])) if "masked_spec_embed" not in k]
+        print("[hubert] missing keys:", miss, "| unexpected:", list(info.get("unexpected_keys", []))[:10])
         if miss:
             raise SystemExit(f"HuBERT weights did not load (random init would be exported): {miss[:10]}")
         pp = os.path.join(hubert_dir, "preprocessor_config.json")
