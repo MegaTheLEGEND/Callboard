@@ -60,6 +60,10 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "17" }
       - uses: android-actions/setup-android@v3
+        with:
+          # The default ("tools platform-tools") fails: the legacy 'tools' package no longer exists.
+          # The runner already ships the SDK; this just accepts licenses so Gradle can fetch platform 35, NDK, CMake.
+          packages: ''
       - name: Native libs (ONNX Runtime + QNN)
         run: bash scripts/fetch_ort.sh
       - name: Signing key (optional secrets KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD)
