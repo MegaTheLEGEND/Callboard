@@ -61,10 +61,15 @@ Use wired/USB headphones for the lowest latency (Bluetooth adds 100+ ms) and to 
 **Base models + APK — no PC needed.** Push this project to GitHub and run *Actions → Build base models + APK*
 (`.github/workflows/build-base.yml`; ~1-2 h, free). It exports HuBERT v1/v2, FCPE and a synth template per variant, **bakes
 the ones listed in the `bake` input (default v2_40000 + v1_40000) into the APK**, builds the APK, and publishes everything as a Release.
-Install `app-debug.apk` from the release (the workflow's `build_type` input defaults to *debug*; choose *release* to get `RvcS25.apk` instead). The debug build is debuggable, so `adb shell run-as com.rvcs25.app ls files/voices` works; a debug and a release APK are signed with the same key only if you set the CI keystore secrets, otherwise uninstall one before installing the other (that clears the app's voices) (it is ~1 GB with the defaults). Voices of those types work offline immediately; any other
+Install `app-debug.apk` from the release (the workflow's `build_type` input defaults to *debug*; choose *release* to get `RvcS25.apk` instead). The debug build is debuggable, so `adb shell run-as com.rvcs25.app ls files/voices` works. (it is ~1 GB with the defaults). Voices of those types work offline immediately; any other
 type is fetched on demand from the same release: in the app, *Voices → Base models*, enter `owner/repo`.
-Optional secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` keep the signing key stable between builds,
-so a new APK installs over the old one and keeps your voices (without them each build has a new key: uninstall first).
+**Updating without reinstalling.** Every build (local or CI, debug or release) is signed with the key in
+`android/signing/rvcs25.jks` and gets an ever-increasing `versionCode`, so a new APK installs **over** the old one and keeps
+your voices and settings: just open the new APK (or `adb install -r app-debug.apk`). Only the very first install after this
+change needs an uninstall (the old builds used a different, random key). Debug and release builds also install over each other.
+The keystore is committed on purpose (personal sideload app; password `rvcs25app`, alias `rvcs25`). If the repo is public and you
+don't want others to be able to sign "updates" for your install, replace it with your own key via the optional secrets
+`KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` (and use that key for every build from then on).
 Prefer doing it by hand? `python export/build_base.py --hubert-dir assets/hubert_base --out base/` and
 `adb push base /sdcard/Android/data/com.rvcs25.app/files/base` works too (variants: `--variants v2_48000 ...`, `--from-pth model.pth`).
 The script self-tests each template (random weights injected by name must reproduce PyTorch).

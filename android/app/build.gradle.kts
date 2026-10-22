@@ -11,7 +11,9 @@ android {
         applicationId = "com.rvcs25.app"
         minSdk = 31            // Android 12+: Galaxy S25 ships Android 15
         targetSdk = 35
-        versionCode = 1
+        // Must increase with every build, or Android refuses to install it over the old one.
+        // Minutes since 1970 (fits an Int until the year 5000+), so local and CI builds always stay in order.
+        versionCode = (System.currentTimeMillis() / 60000L).toInt()
         versionName = "0.1"
         ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild {
@@ -30,13 +32,18 @@ android {
     // Baked-in base models: store them uncompressed (ONNX floats don't compress; saves minutes of build time)
     androidResources { noCompress += listOf("onnx", "f32") }
 
-    // CI can pass a stable key (KEYSTORE_FILE/KEYSTORE_PASSWORD/KEY_ALIAS/KEY_PASSWORD) so updates install over old builds
+    // Every build (local, CI, debug, release) is signed with the SAME key, so a new APK installs over the old one
+    // (keeps your voices and settings). Android only allows an update when the signing key matches.
+    // - Default: android/signing/rvcs25.jks, committed to the repo (personal sideload key, no secrets needed).
+    // - Optional: CI can pass its own key (KEYSTORE_FILE/KEYSTORE_PASSWORD/KEY_ALIAS/KEY_PASSWORD) -- but then use it
+    //   for every build from then on, because changing the key means uninstalling once.
     signingConfigs {
-        System.getenv("KEYSTORE_FILE")?.let { f ->
-            create("ci") {
-                storeFile = file(f); storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KEY_ALIAS"); keyPassword = System.getenv("KEY_PASSWORD")
-            }
+        create("stable") {
+            val f = System.getenv("KEYSTORE_FILE")
+            storeFile = if (f != null) file(f) else file("../signing/rvcs25.jks")
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "rvcs25app"
+            keyAlias = System.getenv("KEY_ALIAS") ?: "rvcs25"
+            keyPassword = System.getenv("KEY_PASSWORD") ?: "rvcs25app"
         }
     }
 
@@ -60,14 +67,14 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.findByName("ci") ?: signingConfigs.getByName("debug")   // sideload build
+            signingConfig = signingConfigs.getByName("stable")   // sideload build
         }
         // app-debug.apk: debuggable, so `adb shell run-as com.rvcs25.app ...` can read files/voices etc.
-        // Signed like release (CI key if provided) so the two install over each other. The native engine is still
+        // Signed like release (same stable key) so the two install over each other. The native engine is still
         // built optimised (see engine/CMakeLists.txt); only the Java/Kotlin side is a debug build.
         debug {
             isDebuggable = true
-            signingConfig = signingConfigs.findByName("ci") ?: signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("stable")
         }
     }
 }
