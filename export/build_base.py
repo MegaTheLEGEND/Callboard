@@ -98,7 +98,8 @@ def build_template(version: str, cfg: list, args, fcpe: dict, out_dir: str) -> N
     m = onnx.load(path)
     over = [(i.name, list(i.dims)) for i in m.graph.initializer if i.name == "g" or i.name.startswith("net_g.")]
     named = {n for n, _ in over}
-    missing = [n for n, _ in core.named_parameters() if n not in named]
+    unused_ok = ("net_g.dec.m_source.", "net_g.emb_g.")   # CPU-side source module / speaker table (replaced by "g")
+    missing = [n for n, _ in core.named_parameters() if n not in named and not n.startswith(unused_ok)]
     if missing:
         raise SystemExit(f"[template {version}_{sr}] {len(missing)} weights are not overridable by name "
                          f"(merged/folded by the exporter): {missing[:15]}")
