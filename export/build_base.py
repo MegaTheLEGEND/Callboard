@@ -83,6 +83,13 @@ def build_template(version: str, cfg: list, args, fcpe: dict, out_dir: str) -> N
     core = SynthCore(net, geo, sid=0).eval()
     g = core.g.detach().clone(); del core.g
     core.g = nn.Parameter(g)                      # speaker vector becomes an overridable initializer "g"
+    # Template weights are placeholders, but they must be pairwise DISTINCT: a freshly built net has many identical
+    # tensors (norm gammas = 1, biases / zero-init layers = 0, ...) and torch.onnx.export merges identical
+    # initializers into one, which silently drops those names from the overridable set.
+    gen = torch.Generator().manual_seed(1234)
+    with torch.no_grad():
+        for p_ in core.parameters():
+            p_.add_(1e-3 * torch.randn(p_.shape, generator=gen))
     inputs = make_example_inputs(geo)
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, "synth.onnx")
@@ -90,6 +97,11 @@ def build_template(version: str, cfg: list, args, fcpe: dict, out_dir: str) -> N
                       opset_version=17, do_constant_folding=False, dynamo=False)  # keep weight names intact
     m = onnx.load(path)
     over = [(i.name, list(i.dims)) for i in m.graph.initializer if i.name == "g" or i.name.startswith("net_g.")]
+    named = {n for n, _ in over}
+    missing = [n for n, _ in core.named_parameters() if n not in named]
+    if missing:
+        raise SystemExit(f"[template {version}_{sr}] {len(missing)} weights are not overridable by name "
+                         f"(merged/folded by the exporter): {missing[:15]}")
     with open(os.path.join(out_dir, "template.params"), "w") as f:
         for n, d in over:
             f.write(n + " " + " ".join(map(str, d)) + "\n")
@@ -113,7 +125,8 @@ def build_template(version: str, cfg: list, args, fcpe: dict, out_dir: str) -> N
     sess = ort.InferenceSession(path, so, providers=["CPUExecutionProvider"])
     out = sess.run(None, dict(zip(["feats", "pitch", "har", "noise"], [t.numpy() for t in inputs])))[0]
     err = float(np.abs(out - ref).max())
-    print(f"[template {version}_{sr}] {len(over)} overridable weights, self-test max|err|={err:.2e}")
+    print(f"[template {version}_{sr}] {len(over)} overridable weights, self-test max|err|={err:.2e} "
+          f"(max|ref|={float(np.abs(ref).max()):.2e})")
     if err > 2e-3:
         raise SystemExit("self-test FAILED: some weights are not reachable by name (derived constants in the graph)")
 
