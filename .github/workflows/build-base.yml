@@ -1,0 +1,84 @@
+name: Build base models + APK
+# Actions tab -> "Build base models + APK" -> Run workflow.
+# Publishes ONE release containing the APK (base models baked in) and the base-model files (for other voice types).
+on:
+  workflow_dispatch:
+    inputs:
+      variants:
+        description: "voice architectures to build and publish (version_samplerate, space separated)"
+        default: "v2_40000 v1_40000 v2_48000 v1_48000 v2_32000 v1_32000"
+      bake:
+        description: "which of those to bake INTO the APK (each adds ~100 MB; HuBERT adds ~370 MB per v1/v2)"
+        default: "v2_40000 v1_40000"
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Install Python deps
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r export/requirements.txt huggingface_hub
+      - name: HuBERT weights
+        run: python -c "from huggingface_hub import snapshot_download as d; d('lj1995/VoiceConversionWebUI', allow_patterns='hubert_base/*', local_dir='assets')"
+      - name: Build base models
+        run: python export/build_base.py --hubert-dir assets/hubert_base --out base --variants ${{ inputs.variants }}
+      - name: Flatten for release
+        run: |
+          python - <<'PY'
+          import json, shutil, os
+          m = json.load(open("base/manifest.json")); os.makedirs("release")
+          for rel, e in m.items(): shutil.copy("base/" + rel, "release/" + e["asset"])
+          shutil.copy("base/manifest.json", "release/manifest.json")
+          PY
+      - name: Bake models into the app
+        env: { BAKE: "${{ inputs.bake }}", ALL: "${{ inputs.variants }}" }
+        run: |
+          python - <<'PY'
+          import json, os, shutil
+          bake, allv = os.environ["BAKE"].split(), os.environ["ALL"].split()
+          assert set(bake) <= set(allv), "bake must be a subset of variants"
+          m = json.load(open("base/manifest.json"))
+          keep = {"fcpe_mel.onnx", "fcpe_net.onnx", "fcpe_cents.f32"}
+          for v in bake:
+              keep.add(f"hubert_{v.split('_')[0]}.onnx")
+              keep |= {r for r in m if r.startswith(f"templates/{v}/")}
+          dst = "android/app/src/main/assets/base"
+          for r in keep:
+              os.makedirs(os.path.dirname(f"{dst}/{r}"), exist_ok=True); shutil.copy(f"base/{r}", f"{dst}/{r}")
+          json.dump({r: m[r] for r in keep}, open(f"{dst}/manifest.json", "w"))
+          print("baked", len(keep), "files")
+          PY
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: android-actions/setup-android@v3
+      - name: Native libs (ONNX Runtime + QNN)
+        run: bash scripts/fetch_ort.sh
+      - name: Signing key (optional secrets KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD)
+        env: { KS: "${{ secrets.KEYSTORE_BASE64 }}" }
+        run: |
+          if [ -n "$KS" ]; then
+            echo "$KS" | base64 -d > "$RUNNER_TEMP/ci.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/ci.jks" >> "$GITHUB_ENV"
+            echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> "$GITHUB_ENV"
+          fi
+      - name: Build APK
+        working-directory: android
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon -Dorg.gradle.jvmargs=-Xmx3g
+      - name: Collect APK
+        run: cp android/app/build/outputs/apk/release/*.apk release/RvcS25.apk
+      - uses: actions/upload-artifact@v4
+        with: { name: RvcS25-apk, path: release/RvcS25.apk, compression-level: 0 }
+      - name: Publish release
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: gh release create "build-${{ github.run_number }}" release/* --title "RVC S25 build ${{ github.run_number }}" --notes "RvcS25.apk has the base models baked in. The other files are base models the app downloads on demand."

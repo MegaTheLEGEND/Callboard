@@ -1,0 +1,224 @@
+package com.rvcs25.app
+
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import android.system.Os
+import dev.callboard.rvc.NativeBridge
+import org.json.JSONObject
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
+import java.util.zip.ZipInputStream
+
+/**
+ * Voice library, fully on-device.
+ *   files/base/            (adb push once, from export/build_base.py)  HuBERT v1/v2, FCPE, synth templates
+ *   filesDir/voices/<id>/  one imported voice: weights.bin + engine.cfg + symlinks into base/
+ * A voice is made by reading the .pth natively (NativeBridge.nativeImportPth); the NPU compiles its synth once.
+ */
+object Voices {
+    const val LEGACY = "legacy"
+
+    class Voice(val id: String, val name: String, val version: String, val sr: Int, val hasIndex: Boolean, val dir: File) {
+        val label get() = "$name  ·  $version · ${sr / 1000} kHz" + if (hasIndex) " · index" else ""
+    }
+
+    private lateinit var app: Context
+    fun init(c: Context) { app = c.applicationContext }
+    val root get() = File(app.filesDir, "voices").apply { mkdirs() }
+    val base get() = File(app.getExternalFilesDir(null), "base")
+
+    fun installedTemplates(): List<String> =
+        File(base, "templates").listFiles()?.filter { File(it, "synth.onnx").exists() }?.map { it.name }?.sorted() ?: emptyList()
+
+    fun list(): List<Voice> {
+        val out = mutableListOf<Voice>()
+        val legacy = File(app.getExternalFilesDir(null), "pack")
+        if (File(legacy, "engine.cfg").exists()) out += read(LEGACY, legacy, "Legacy pack")
+        root.listFiles()?.filter { it.isDirectory }?.sortedBy { it.lastModified() }
+            ?.forEach { d -> runCatching { out += read(d.name, d, null) } }
+        return out
+    }
+
+    private fun read(id: String, dir: File, fallbackName: String?): Voice {
+        val vj = File(dir, "voice.json").takeIf { it.exists() }?.let { JSONObject(it.readText()) }
+        val cj = File(dir, "config.json").takeIf { it.exists() }?.let { JSONObject(it.readText()) }
+        return Voice(id, vj?.optString("name") ?: fallbackName ?: id, cj?.optString("version", "?") ?: "?",
+            cj?.optInt("tgt_sr", 0) ?: 0, File(dir, "index.bin").exists(), dir)
+    }
+
+    fun active(): Voice? = list().let { l -> l.firstOrNull { it.id == Settings.voiceId } ?: l.firstOrNull() }
+
+    fun delete(id: String) {
+        if (id == LEGACY) return
+        File(root, id).deleteRecursively()   // symlinks are removed, base files stay
+        if (Settings.voiceId == id) Settings.voiceId = ""
+    }
+
+    /** Converts [pth] into a new voice. Throws with a readable message. Slow part is the NPU compile on first Load. */
+    fun addFromPth(pth: File, name: String, say: (String) -> Unit): Voice {
+        say("Reading the voice file…")
+        val info = NativeBridge.nativeInspectPth(pth.absolutePath).split("|", limit = 6)
+        if (info[0] != "ok") throw Exception(info.getOrElse(1) { "unreadable file" })
+        val ver = info[1]; val sr = info[2].toInt()
+        if (info[5].isNotEmpty()) throw Exception(info[5])
+        val key = "${ver}_$sr"
+        val tpl = File(base, "templates/$key")
+        ensureBase(ver, key, say)
+        val man = JSONObject(File(base, "manifest.json").readText())
+        val id = name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(24).ifEmpty { "voice" } +
+            "-" + System.currentTimeMillis().toString(36)
+        val dir = File(root, id).apply { mkdirs() }
+        try {
+            say("Converting weights on the phone…")
+            val err = NativeBridge.nativeImportPth(pth.absolutePath, tpl.absolutePath, dir.absolutePath, 0)
+            if (err.isNotEmpty()) throw Exception(err)
+            fun link(n: String, target: File) {
+                require(target.exists()) { "base file missing: ${target.name}" }
+                try { Os.symlink(target.absolutePath, File(dir, n).absolutePath) } catch (e: Exception) { target.copyTo(File(dir, n)) }
+            }
+            link("hubert.onnx", File(base, "hubert_$ver.onnx"))
+            link("fcpe_mel.onnx", File(base, "fcpe_mel.onnx"))
+            link("fcpe_net.onnx", File(base, "fcpe_net.onnx"))
+            link("synth.onnx", File(tpl, "synth.onnx"))
+            File(base, "fcpe_cents.f32").copyTo(File(dir, "fcpe_cents.f32"))
+            // The manifest drives the NPU cache tags: HuBERT/FCPE reuse their compiled graphs across voices,
+            // the synth is keyed by template + this voice's weights.
+            val synthSha = sha(man.getJSONObject("templates/$key/synth.onnx").getString("sha256") + sha256(File(dir, "weights.bin")))
+            fun ent(sha: String) = JSONObject().put("bytes", 0).put("sha256", sha)
+            File(dir, "manifest.json").writeText(JSONObject()
+                .put("hubert.onnx", ent(man.getJSONObject("hubert_$ver.onnx").getString("sha256")))
+                .put("fcpe_mel.onnx", ent(man.getJSONObject("fcpe_mel.onnx").getString("sha256")))
+                .put("fcpe_net.onnx", ent(man.getJSONObject("fcpe_net.onnx").getString("sha256")))
+                .put("synth.onnx", ent(synthSha)).toString())
+            File(dir, "config.json").writeText(JSONObject().put("version", ver).put("tgt_sr", sr).toString())
+            File(dir, "voice.json").writeText(JSONObject().put("name", name).toString())
+        } catch (e: Throwable) { dir.deleteRecursively(); throw e }
+        return read(id, dir, name)
+    }
+
+    private fun releaseUrl(): String {
+        val b = Settings.baseUrl.trim()
+        if (b.isEmpty()) throw Exception("Base models are not on this phone yet. Enter your GitHub repo (owner/name) under “Base models” " +
+            "after running its “Build base models” workflow — or adb push the base folder (see README).")
+        val u = if (Regex("^[\\w.-]+/[\\w.-]+$").matches(b)) "https://github.com/$b/releases/latest/download/" else b
+        return if (u.endsWith("/")) u else "$u/"
+    }
+
+    /** Gets whatever this voice type needs (HuBERT for its version, FCPE, its synth template): from the models baked
+     *  into the APK if present, otherwise from the GitHub release. Already-present files are never touched. */
+    private fun ensureBase(ver: String, key: String, say: (String) -> Unit) {
+        val need = listOf("hubert_$ver.onnx", "fcpe_mel.onnx", "fcpe_net.onnx", "fcpe_cents.f32", "templates/$key/synth.onnx",
+            "templates/$key/template.params", "templates/$key/template.config", "templates/$key/template.cfg")
+        if (need.all { File(base, it).exists() } && File(base, "manifest.json").exists()) return
+        base.mkdirs()
+        val local = File(base, "manifest.json").takeIf { it.exists() }?.let { JSONObject(it.readText()) } ?: JSONObject()
+        val bundled = runCatching { JSONObject(app.assets.open("base/manifest.json").bufferedReader().use { it.readText() }) }.getOrNull()
+        var remote: JSONObject? = null; var url = ""
+        for (rel in need) {
+            val dest = File(base, rel)
+            if (dest.exists()) continue
+            dest.parentFile!!.mkdirs()
+            val be = bundled?.optJSONObject(rel)
+            if (be != null) {
+                say("Unpacking built-in base model $rel…")
+                val part = File(dest.path + ".part")
+                app.assets.open("base/$rel").use { i -> part.outputStream().use { i.copyTo(it, 1 shl 20) } }
+                part.renameTo(dest); local.put(rel, be)
+            } else {
+                if (remote == null) {
+                    url = releaseUrl(); say("Fetching the list of base models…")
+                    remote = JSONObject(String(fetchBytes(url + "manifest.json")))
+                }
+                val e = remote.optJSONObject(rel)
+                    ?: throw Exception("This build has no $rel. Re-run the “Build base models + APK” workflow with variant $key.")
+                fetchFile(url + e.getString("asset"), dest, e.getString("sha256")) { say("Downloading base model $rel… $it") }
+                local.put(rel, e)
+            }
+        }
+        File(base, "manifest.json").writeText(local.toString())
+    }
+
+    private fun open(u: String) = (URL(u).openConnection() as HttpURLConnection).apply {
+        connectTimeout = 15000; readTimeout = 30000; setRequestProperty("User-Agent", "RVC-S25")
+        if (responseCode >= 400) throw Exception("Download failed (HTTP $responseCode) for ${u.substringAfterLast('/')}")
+    }
+
+    private fun fetchBytes(u: String) = open(u).inputStream.use { it.readBytes() }
+
+    private fun fetchFile(u: String, dest: File, sha: String, prog: (String) -> Unit) {
+        val c = open(u); val total = c.contentLengthLong
+        val part = File(dest.path + ".part"); val md = MessageDigest.getInstance("SHA-256")
+        c.inputStream.use { ins -> part.outputStream().use { out ->
+            val b = ByteArray(1 shl 18); var done = 0L; var last = 0L
+            while (true) {
+                val n = ins.read(b); if (n < 0) break
+                out.write(b, 0, n); md.update(b, 0, n); done += n
+                if (done - last > (4 shl 20)) { last = done; prog("${done shr 20}" + if (total > 0) " / ${total shr 20} MB" else " MB") }
+            }
+        } }
+        if (md.digest().joinToString("") { "%02x".format(it) } != sha) { part.delete(); throw Exception("${dest.name} was corrupted in transfer, try again") }
+        part.renameTo(dest)
+    }
+
+    /** Downloads [url] (Hugging Face "blob" links are rewritten to direct links). A .zip is searched for its .pth. */
+    fun download(url: String, say: (String) -> Unit): File {
+        var u = url.trim().replace("/blob/", "/resolve/")
+        require(u.startsWith("http://") || u.startsWith("https://")) { "Enter a full http(s) link" }
+        val fname = u.substringBefore('?').substringAfterLast('/').ifEmpty { "voice.pth" }
+        val tmp = File(app.cacheDir, "dl_" + System.currentTimeMillis()).apply { mkdirs() }
+        val dest = File(tmp, fname)
+        val c = URL(u).openConnection() as HttpURLConnection
+        c.connectTimeout = 15000; c.readTimeout = 30000; c.setRequestProperty("User-Agent", "RVC-S25")
+        if (c.responseCode >= 400) throw Exception("Download failed (HTTP ${c.responseCode})")
+        val total = c.contentLengthLong
+        c.inputStream.use { ins -> dest.outputStream().use { out ->
+            val b = ByteArray(1 shl 18); var done = 0L; var last = 0L
+            while (true) {
+                val n = ins.read(b); if (n < 0) break
+                out.write(b, 0, n); done += n
+                if (done > (2L shl 30)) throw Exception("File is larger than 2 GB")
+                if (done - last > (1 shl 20)) { last = done; say("Downloading… ${done shr 20}" + if (total > 0) " / ${total shr 20} MB" else " MB") }
+            }
+        } }
+        if (!fname.endsWith(".zip", true)) return dest
+        say("Unpacking zip…")
+        val out = File(tmp, "voice.pth")
+        ZipInputStream(dest.inputStream()).use { z ->
+            var best = -1L
+            var found = false
+            // pick the first .pth that is not a discriminator ("D_*.pth")
+            while (true) {
+                val e = z.nextEntry ?: break
+                val n = e.name.substringAfterLast('/')
+                if (e.isDirectory || !n.endsWith(".pth", true) || n.startsWith("D_")) continue
+                out.outputStream().use { z.copyTo(it) }; found = true; best = out.length(); break
+            }
+            if (!found) throw Exception("No .pth found inside the zip")
+        }
+        dest.delete()
+        return out
+    }
+
+    fun copyPicked(uri: Uri): File {
+        val tmp = File(app.cacheDir, "pick_" + System.currentTimeMillis()).apply { mkdirs() }
+        val f = File(tmp, "voice.pth")
+        app.contentResolver.openInputStream(uri)!!.use { i -> f.outputStream().use { i.copyTo(it) } }
+        return f
+    }
+
+    fun displayName(uri: Uri): String = app.contentResolver.query(uri, null, null, null, null)?.use {
+        if (it.moveToFirst()) it.getString(it.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME)) else null
+    } ?: "voice"
+
+    fun cleanTemp() { app.cacheDir.listFiles()?.filter { it.name.startsWith("dl_") || it.name.startsWith("pick_") }?.forEach { it.deleteRecursively() } }
+
+    private fun sha(s: String) = MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
+    private fun sha256(f: File): String {
+        val md = MessageDigest.getInstance("SHA-256"); val b = ByteArray(1 shl 20)
+        f.inputStream().use { while (true) { val n = it.read(b); if (n < 0) break; md.update(b, 0, n) } }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+}

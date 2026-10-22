@@ -1,0 +1,22 @@
+{
+  "hubert.onnx": {
+    "bytes": 377611218,
+    "sha256": "3540abd12f569e44b186d27a85be077a003b8b7a46d656c5e7e9c559008f9fc3"
+  },
+  "fcpe_mel.onnx": {
+    "bytes": 4493925,
+    "sha256": "a2973f19525ee68cd0f544924e719a76b89c1f92dc7d0720cf42c2349cb1cd6d"
+  },
+  "fcpe_net.onnx": {
+    "bytes": 43337829,
+    "sha256": "921facb4f243fa9eba657a1f60bcddd227d58916ffd12fac7b302ff44ba85a3a"
+  },
+  "synth.onnx": {
+    "bytes": 105395004,
+    "sha256": "f5783037fea93fa04c552d3f2b6237aeba6654d5b4c97067593a087630c211c0"
+  },
+  "index.bin": {
+    "bytes": 83751376,
+    "sha256": "6155b4ea4f65a43f1830287b792ab62268df3e7d1fdcace09738a378ca9440ac"
+  }
+}

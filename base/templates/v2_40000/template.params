@@ -1,0 +1,323 @@
+g 1 256 1
+net_g.dec.noise_convs.0.weight 256 1 80
+net_g.dec.noise_convs.0.bias 256
+net_g.dec.noise_convs.1.weight 128 1 8
+net_g.dec.noise_convs.1.bias 128
+net_g.dec.noise_convs.2.weight 64 1 4
+net_g.dec.noise_convs.2.bias 64
+net_g.dec.noise_convs.3.weight 32 1 1
+net_g.dec.noise_convs.3.bias 32
+net_g.dec.conv_pre.weight 512 192 7
+net_g.dec.conv_pre.bias 512
+net_g.dec.ups.0.bias 256
+net_g.dec.ups.0.weight 512 256 16
+net_g.dec.ups.1.bias 128
+net_g.dec.ups.1.weight 256 128 16
+net_g.dec.ups.2.bias 64
+net_g.dec.ups.2.weight 128 64 4
+net_g.dec.ups.3.bias 32
+net_g.dec.ups.3.weight 64 32 4
+net_g.dec.resblocks.0.convs1.0.bias 256
+net_g.dec.resblocks.0.convs1.0.weight 256 256 3
+net_g.dec.resblocks.0.convs1.1.bias 256
+net_g.dec.resblocks.0.convs1.1.weight 256 256 3
+net_g.dec.resblocks.0.convs1.2.bias 256
+net_g.dec.resblocks.0.convs1.2.weight 256 256 3
+net_g.dec.resblocks.0.convs2.0.bias 256
+net_g.dec.resblocks.0.convs2.0.weight 256 256 3
+net_g.dec.resblocks.0.convs2.1.bias 256
+net_g.dec.resblocks.0.convs2.1.weight 256 256 3
+net_g.dec.resblocks.0.convs2.2.bias 256
+net_g.dec.resblocks.0.convs2.2.weight 256 256 3
+net_g.dec.resblocks.1.convs1.0.bias 256
+net_g.dec.resblocks.1.convs1.0.weight 256 256 7
+net_g.dec.resblocks.1.convs1.1.bias 256
+net_g.dec.resblocks.1.convs1.1.weight 256 256 7
+net_g.dec.resblocks.1.convs1.2.bias 256
+net_g.dec.resblocks.1.convs1.2.weight 256 256 7
+net_g.dec.resblocks.1.convs2.0.bias 256
+net_g.dec.resblocks.1.convs2.0.weight 256 256 7
+net_g.dec.resblocks.1.convs2.1.bias 256
+net_g.dec.resblocks.1.convs2.1.weight 256 256 7
+net_g.dec.resblocks.1.convs2.2.bias 256
+net_g.dec.resblocks.1.convs2.2.weight 256 256 7
+net_g.dec.resblocks.2.convs1.0.bias 256
+net_g.dec.resblocks.2.convs1.0.weight 256 256 11
+net_g.dec.resblocks.2.convs1.1.bias 256
+net_g.dec.resblocks.2.convs1.1.weight 256 256 11
+net_g.dec.resblocks.2.convs1.2.bias 256
+net_g.dec.resblocks.2.convs1.2.weight 256 256 11
+net_g.dec.resblocks.2.convs2.0.bias 256
+net_g.dec.resblocks.2.convs2.0.weight 256 256 11
+net_g.dec.resblocks.2.convs2.1.bias 256
+net_g.dec.resblocks.2.convs2.1.weight 256 256 11
+net_g.dec.resblocks.2.convs2.2.bias 256
+net_g.dec.resblocks.2.convs2.2.weight 256 256 11
+net_g.dec.resblocks.3.convs1.0.bias 128
+net_g.dec.resblocks.3.convs1.0.weight 128 128 3
+net_g.dec.resblocks.3.convs1.1.bias 128
+net_g.dec.resblocks.3.convs1.1.weight 128 128 3
+net_g.dec.resblocks.3.convs1.2.bias 128
+net_g.dec.resblocks.3.convs1.2.weight 128 128 3
+net_g.dec.resblocks.3.convs2.0.bias 128
+net_g.dec.resblocks.3.convs2.0.weight 128 128 3
+net_g.dec.resblocks.3.convs2.1.bias 128
+net_g.dec.resblocks.3.convs2.1.weight 128 128 3
+net_g.dec.resblocks.3.convs2.2.bias 128
+net_g.dec.resblocks.3.convs2.2.weight 128 128 3
+net_g.dec.resblocks.4.convs1.0.bias 128
+net_g.dec.resblocks.4.convs1.0.weight 128 128 7
+net_g.dec.resblocks.4.convs1.1.bias 128
+net_g.dec.resblocks.4.convs1.1.weight 128 128 7
+net_g.dec.resblocks.4.convs1.2.bias 128
+net_g.dec.resblocks.4.convs1.2.weight 128 128 7
+net_g.dec.resblocks.4.convs2.0.bias 128
+net_g.dec.resblocks.4.convs2.0.weight 128 128 7
+net_g.dec.resblocks.4.convs2.1.bias 128
+net_g.dec.resblocks.4.convs2.1.weight 128 128 7
+net_g.dec.resblocks.4.convs2.2.bias 128
+net_g.dec.resblocks.4.convs2.2.weight 128 128 7
+net_g.dec.resblocks.5.convs1.0.bias 128
+net_g.dec.resblocks.5.convs1.0.weight 128 128 11
+net_g.dec.resblocks.5.convs1.1.bias 128
+net_g.dec.resblocks.5.convs1.1.weight 128 128 11
+net_g.dec.resblocks.5.convs1.2.bias 128
+net_g.dec.resblocks.5.convs1.2.weight 128 128 11
+net_g.dec.resblocks.5.convs2.0.bias 128
+net_g.dec.resblocks.5.convs2.0.weight 128 128 11
+net_g.dec.resblocks.5.convs2.1.bias 128
+net_g.dec.resblocks.5.convs2.1.weight 128 128 11
+net_g.dec.resblocks.5.convs2.2.bias 128
+net_g.dec.resblocks.5.convs2.2.weight 128 128 11
+net_g.dec.resblocks.6.convs1.0.bias 64
+net_g.dec.resblocks.6.convs1.0.weight 64 64 3
+net_g.dec.resblocks.6.convs1.1.bias 64
+net_g.dec.resblocks.6.convs1.1.weight 64 64 3
+net_g.dec.resblocks.6.convs1.2.bias 64
+net_g.dec.resblocks.6.convs1.2.weight 64 64 3
+net_g.dec.resblocks.6.convs2.0.bias 64
+net_g.dec.resblocks.6.convs2.0.weight 64 64 3
+net_g.dec.resblocks.6.convs2.1.bias 64
+net_g.dec.resblocks.6.convs2.1.weight 64 64 3
+net_g.dec.resblocks.6.convs2.2.bias 64
+net_g.dec.resblocks.6.convs2.2.weight 64 64 3
+net_g.dec.resblocks.7.convs1.0.bias 64
+net_g.dec.resblocks.7.convs1.0.weight 64 64 7
+net_g.dec.resblocks.7.convs1.1.bias 64
+net_g.dec.resblocks.7.convs1.1.weight 64 64 7
+net_g.dec.resblocks.7.convs1.2.bias 64
+net_g.dec.resblocks.7.convs1.2.weight 64 64 7
+net_g.dec.resblocks.7.convs2.0.bias 64
+net_g.dec.resblocks.7.convs2.0.weight 64 64 7
+net_g.dec.resblocks.7.convs2.1.bias 64
+net_g.dec.resblocks.7.convs2.1.weight 64 64 7
+net_g.dec.resblocks.7.convs2.2.bias 64
+net_g.dec.resblocks.7.convs2.2.weight 64 64 7
+net_g.dec.resblocks.8.convs1.0.bias 64
+net_g.dec.resblocks.8.convs1.0.weight 64 64 11
+net_g.dec.resblocks.8.convs1.1.bias 64
+net_g.dec.resblocks.8.convs1.1.weight 64 64 11
+net_g.dec.resblocks.8.convs1.2.bias 64
+net_g.dec.resblocks.8.convs1.2.weight 64 64 11
+net_g.dec.resblocks.8.convs2.0.bias 64
+net_g.dec.resblocks.8.convs2.0.weight 64 64 11
+net_g.dec.resblocks.8.convs2.1.bias 64
+net_g.dec.resblocks.8.convs2.1.weight 64 64 11
+net_g.dec.resblocks.8.convs2.2.bias 64
+net_g.dec.resblocks.8.convs2.2.weight 64 64 11
+net_g.dec.resblocks.9.convs1.0.bias 32
+net_g.dec.resblocks.9.convs1.0.weight 32 32 3
+net_g.dec.resblocks.9.convs1.1.bias 32
+net_g.dec.resblocks.9.convs1.1.weight 32 32 3
+net_g.dec.resblocks.9.convs1.2.bias 32
+net_g.dec.resblocks.9.convs1.2.weight 32 32 3
+net_g.dec.resblocks.9.convs2.0.bias 32
+net_g.dec.resblocks.9.convs2.0.weight 32 32 3
+net_g.dec.resblocks.9.convs2.1.bias 32
+net_g.dec.resblocks.9.convs2.1.weight 32 32 3
+net_g.dec.resblocks.9.convs2.2.bias 32
+net_g.dec.resblocks.9.convs2.2.weight 32 32 3
+net_g.dec.resblocks.10.convs1.0.bias 32
+net_g.dec.resblocks.10.convs1.0.weight 32 32 7
+net_g.dec.resblocks.10.convs1.1.bias 32
+net_g.dec.resblocks.10.convs1.1.weight 32 32 7
+net_g.dec.resblocks.10.convs1.2.bias 32
+net_g.dec.resblocks.10.convs1.2.weight 32 32 7
+net_g.dec.resblocks.10.convs2.0.bias 32
+net_g.dec.resblocks.10.convs2.0.weight 32 32 7
+net_g.dec.resblocks.10.convs2.1.bias 32
+net_g.dec.resblocks.10.convs2.1.weight 32 32 7
+net_g.dec.resblocks.10.convs2.2.bias 32
+net_g.dec.resblocks.10.convs2.2.weight 32 32 7
+net_g.dec.resblocks.11.convs1.0.bias 32
+net_g.dec.resblocks.11.convs1.0.weight 32 32 11
+net_g.dec.resblocks.11.convs1.1.bias 32
+net_g.dec.resblocks.11.convs1.1.weight 32 32 11
+net_g.dec.resblocks.11.convs1.2.bias 32
+net_g.dec.resblocks.11.convs1.2.weight 32 32 11
+net_g.dec.resblocks.11.convs2.0.bias 32
+net_g.dec.resblocks.11.convs2.0.weight 32 32 11
+net_g.dec.resblocks.11.convs2.1.bias 32
+net_g.dec.resblocks.11.convs2.1.weight 32 32 11
+net_g.dec.resblocks.11.convs2.2.bias 32
+net_g.dec.resblocks.11.convs2.2.weight 32 32 11
+net_g.dec.conv_post.weight 1 32 7
+net_g.dec.cond.weight 512 256 1
+net_g.dec.cond.bias 512
+net_g.flow.flows.0.pre.weight 192 96 1
+net_g.flow.flows.0.pre.bias 192
+net_g.flow.flows.0.enc.in_layers.0.bias 384
+net_g.flow.flows.0.enc.in_layers.0.weight 384 192 5
+net_g.flow.flows.0.enc.in_layers.1.bias 384
+net_g.flow.flows.0.enc.in_layers.1.weight 384 192 5
+net_g.flow.flows.0.enc.in_layers.2.bias 384
+net_g.flow.flows.0.enc.in_layers.2.weight 384 192 5
+net_g.flow.flows.0.enc.res_skip_layers.0.bias 384
+net_g.flow.flows.0.enc.res_skip_layers.0.weight 384 192 1
+net_g.flow.flows.0.enc.res_skip_layers.1.bias 384
+net_g.flow.flows.0.enc.res_skip_layers.1.weight 384 192 1
+net_g.flow.flows.0.enc.res_skip_layers.2.bias 192
+net_g.flow.flows.0.enc.res_skip_layers.2.weight 192 192 1
+net_g.flow.flows.0.enc.cond_layer.bias 1152
+net_g.flow.flows.0.enc.cond_layer.weight 1152 256 1
+net_g.flow.flows.0.post.weight 96 192 1
+net_g.flow.flows.0.post.bias 96
+net_g.flow.flows.2.pre.weight 192 96 1
+net_g.flow.flows.2.pre.bias 192
+net_g.flow.flows.2.enc.in_layers.0.bias 384
+net_g.flow.flows.2.enc.in_layers.0.weight 384 192 5
+net_g.flow.flows.2.enc.in_layers.1.bias 384
+net_g.flow.flows.2.enc.in_layers.1.weight 384 192 5
+net_g.flow.flows.2.enc.in_layers.2.bias 384
+net_g.flow.flows.2.enc.in_layers.2.weight 384 192 5
+net_g.flow.flows.2.enc.res_skip_layers.0.bias 384
+net_g.flow.flows.2.enc.res_skip_layers.0.weight 384 192 1
+net_g.flow.flows.2.enc.res_skip_layers.1.bias 384
+net_g.flow.flows.2.enc.res_skip_layers.1.weight 384 192 1
+net_g.flow.flows.2.enc.res_skip_layers.2.bias 192
+net_g.flow.flows.2.enc.res_skip_layers.2.weight 192 192 1
+net_g.flow.flows.2.enc.cond_layer.bias 1152
+net_g.flow.flows.2.enc.cond_layer.weight 1152 256 1
+net_g.flow.flows.4.pre.weight 192 96 1
+net_g.flow.flows.4.pre.bias 192
+net_g.flow.flows.4.enc.in_layers.0.bias 384
+net_g.flow.flows.4.enc.in_layers.0.weight 384 192 5
+net_g.flow.flows.4.enc.in_layers.1.bias 384
+net_g.flow.flows.4.enc.in_layers.1.weight 384 192 5
+net_g.flow.flows.4.enc.in_layers.2.bias 384
+net_g.flow.flows.4.enc.in_layers.2.weight 384 192 5
+net_g.flow.flows.4.enc.res_skip_layers.0.bias 384
+net_g.flow.flows.4.enc.res_skip_layers.0.weight 384 192 1
+net_g.flow.flows.4.enc.res_skip_layers.1.bias 384
+net_g.flow.flows.4.enc.res_skip_layers.1.weight 384 192 1
+net_g.flow.flows.4.enc.res_skip_layers.2.bias 192
+net_g.flow.flows.4.enc.res_skip_layers.2.weight 192 192 1
+net_g.flow.flows.4.enc.cond_layer.bias 1152
+net_g.flow.flows.4.enc.cond_layer.weight 1152 256 1
+net_g.flow.flows.6.pre.weight 192 96 1
+net_g.flow.flows.6.pre.bias 192
+net_g.flow.flows.6.enc.in_layers.0.bias 384
+net_g.flow.flows.6.enc.in_layers.0.weight 384 192 5
+net_g.flow.flows.6.enc.in_layers.1.bias 384
+net_g.flow.flows.6.enc.in_layers.1.weight 384 192 5
+net_g.flow.flows.6.enc.in_layers.2.bias 384
+net_g.flow.flows.6.enc.in_layers.2.weight 384 192 5
+net_g.flow.flows.6.enc.res_skip_layers.0.bias 384
+net_g.flow.flows.6.enc.res_skip_layers.0.weight 384 192 1
+net_g.flow.flows.6.enc.res_skip_layers.1.bias 384
+net_g.flow.flows.6.enc.res_skip_layers.1.weight 384 192 1
+net_g.flow.flows.6.enc.res_skip_layers.2.bias 192
+net_g.flow.flows.6.enc.res_skip_layers.2.weight 192 192 1
+net_g.flow.flows.6.enc.cond_layer.bias 1152
+net_g.flow.flows.6.enc.cond_layer.weight 1152 256 1
+net_g.enc_p.emb_phone.weight 192 768
+net_g.enc_p.emb_phone.bias 192
+net_g.enc_p.emb_pitch.weight 256 192
+net_g.enc_p.encoder.attn_layers.0.emb_rel_k 1 21 96
+net_g.enc_p.encoder.attn_layers.0.emb_rel_v 1 21 96
+net_g.enc_p.encoder.attn_layers.0.conv_q.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.0.conv_q.bias 192
+net_g.enc_p.encoder.attn_layers.0.conv_k.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.0.conv_k.bias 192
+net_g.enc_p.encoder.attn_layers.0.conv_v.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.0.conv_v.bias 192
+net_g.enc_p.encoder.attn_layers.0.conv_o.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.0.conv_o.bias 192
+net_g.enc_p.encoder.attn_layers.1.emb_rel_k 1 21 96
+net_g.enc_p.encoder.attn_layers.1.emb_rel_v 1 21 96
+net_g.enc_p.encoder.attn_layers.1.conv_q.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.1.conv_q.bias 192
+net_g.enc_p.encoder.attn_layers.1.conv_k.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.1.conv_k.bias 192
+net_g.enc_p.encoder.attn_layers.1.conv_v.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.1.conv_v.bias 192
+net_g.enc_p.encoder.attn_layers.1.conv_o.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.1.conv_o.bias 192
+net_g.enc_p.encoder.attn_layers.2.emb_rel_k 1 21 96
+net_g.enc_p.encoder.attn_layers.2.emb_rel_v 1 21 96
+net_g.enc_p.encoder.attn_layers.2.conv_q.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.2.conv_q.bias 192
+net_g.enc_p.encoder.attn_layers.2.conv_k.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.2.conv_k.bias 192
+net_g.enc_p.encoder.attn_layers.2.conv_v.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.2.conv_v.bias 192
+net_g.enc_p.encoder.attn_layers.2.conv_o.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.2.conv_o.bias 192
+net_g.enc_p.encoder.attn_layers.3.emb_rel_k 1 21 96
+net_g.enc_p.encoder.attn_layers.3.emb_rel_v 1 21 96
+net_g.enc_p.encoder.attn_layers.3.conv_q.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.3.conv_q.bias 192
+net_g.enc_p.encoder.attn_layers.3.conv_k.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.3.conv_k.bias 192
+net_g.enc_p.encoder.attn_layers.3.conv_v.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.3.conv_v.bias 192
+net_g.enc_p.encoder.attn_layers.3.conv_o.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.3.conv_o.bias 192
+net_g.enc_p.encoder.attn_layers.4.emb_rel_k 1 21 96
+net_g.enc_p.encoder.attn_layers.4.emb_rel_v 1 21 96
+net_g.enc_p.encoder.attn_layers.4.conv_q.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.4.conv_q.bias 192
+net_g.enc_p.encoder.attn_layers.4.conv_k.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.4.conv_k.bias 192
+net_g.enc_p.encoder.attn_layers.4.conv_v.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.4.conv_v.bias 192
+net_g.enc_p.encoder.attn_layers.4.conv_o.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.4.conv_o.bias 192
+net_g.enc_p.encoder.attn_layers.5.emb_rel_k 1 21 96
+net_g.enc_p.encoder.attn_layers.5.emb_rel_v 1 21 96
+net_g.enc_p.encoder.attn_layers.5.conv_q.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.5.conv_q.bias 192
+net_g.enc_p.encoder.attn_layers.5.conv_k.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.5.conv_k.bias 192
+net_g.enc_p.encoder.attn_layers.5.conv_v.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.5.conv_v.bias 192
+net_g.enc_p.encoder.attn_layers.5.conv_o.weight 192 192 1
+net_g.enc_p.encoder.attn_layers.5.conv_o.bias 192
+net_g.enc_p.encoder.norm_layers_1.0.gamma 192
+net_g.enc_p.encoder.norm_layers_1.0.beta 192
+net_g.enc_p.encoder.ffn_layers.0.conv_1.weight 768 192 3
+net_g.enc_p.encoder.ffn_layers.0.conv_1.bias 768
+net_g.enc_p.encoder.ffn_layers.0.conv_2.weight 192 768 3
+net_g.enc_p.encoder.ffn_layers.0.conv_2.bias 192
+net_g.enc_p.encoder.ffn_layers.1.conv_1.weight 768 192 3
+net_g.enc_p.encoder.ffn_layers.1.conv_1.bias 768
+net_g.enc_p.encoder.ffn_layers.1.conv_2.weight 192 768 3
+net_g.enc_p.encoder.ffn_layers.1.conv_2.bias 192
+net_g.enc_p.encoder.ffn_layers.2.conv_1.weight 768 192 3
+net_g.enc_p.encoder.ffn_layers.2.conv_1.bias 768
+net_g.enc_p.encoder.ffn_layers.2.conv_2.weight 192 768 3
+net_g.enc_p.encoder.ffn_layers.2.conv_2.bias 192
+net_g.enc_p.encoder.ffn_layers.3.conv_1.weight 768 192 3
+net_g.enc_p.encoder.ffn_layers.3.conv_1.bias 768
+net_g.enc_p.encoder.ffn_layers.3.conv_2.weight 192 768 3
+net_g.enc_p.encoder.ffn_layers.3.conv_2.bias 192
+net_g.enc_p.encoder.ffn_layers.4.conv_1.weight 768 192 3
+net_g.enc_p.encoder.ffn_layers.4.conv_1.bias 768
+net_g.enc_p.encoder.ffn_layers.4.conv_2.weight 192 768 3
+net_g.enc_p.encoder.ffn_layers.4.conv_2.bias 192
+net_g.enc_p.encoder.ffn_layers.5.conv_1.weight 768 192 3
+net_g.enc_p.encoder.ffn_layers.5.conv_1.bias 768
+net_g.enc_p.encoder.ffn_layers.5.conv_2.weight 192 768 3
+net_g.enc_p.encoder.ffn_layers.5.conv_2.bias 192
+net_g.enc_p.proj.weight 384 192 1
+net_g.enc_p.proj.bias 384

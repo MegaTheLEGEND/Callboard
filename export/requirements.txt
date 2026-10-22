@@ -1,0 +1,10 @@
+torch>=2.4
+numpy
+scipy
+onnx
+onnxruntime>=1.20
+onnxsim
+transformers>=4.40
+torchfcpe
+faiss-cpu
+scikit-learn
