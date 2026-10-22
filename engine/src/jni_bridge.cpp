@@ -124,6 +124,14 @@ JNIEXPORT jstring JNICALL Java_dev_callboard_rvc_NativeBridge_nativeImportPth(
   return env->NewStringUTF("");
 }
 
+// Copies the template synth.onnx to outOnnx with this voice's weights written into its initializers. "" = ok.
+JNIEXPORT jstring JNICALL Java_dev_callboard_rvc_NativeBridge_nativeBakeSynth(
+    JNIEnv* env, jobject, jstring jtpl, jstring jweights, jstring jout) {
+  std::string e;
+  if (!rvc::pth_bake(to_str(env, jtpl), to_str(env, jweights), to_str(env, jout), &e)) return env->NewStringUTF(e.c_str());
+  return env->NewStringUTF("");
+}
+
 // [0] samples per engine block at 48 kHz   [1] output lookahead in samples (offline alignment)
 JNIEXPORT jintArray JNICALL Java_dev_callboard_rvc_NativeBridge_nativeInfo(JNIEnv* env, jobject) {
   jint v[2] = {0, 0};

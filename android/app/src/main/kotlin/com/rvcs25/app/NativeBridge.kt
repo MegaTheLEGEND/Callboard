@@ -14,6 +14,8 @@ object NativeBridge {
     external fun nativeInspectPth(pth: String): String
     /** Converts a .pth for the given template folder into weights.bin + engine.cfg in [outDir]. "" = ok. */
     external fun nativeImportPth(pth: String, templateDir: String, outDir: String, sid: Int): String
+    /** Writes [outOnnx] = the template synth with this voice's weights (from [weightsBin]) patched in. "" = ok. */
+    external fun nativeBakeSynth(templateOnnx: String, weightsBin: String, outOnnx: String): String
 
     /** [0] samples per engine block at 48 kHz, [1] output lookahead in samples (offline alignment). */
     external fun nativeInfo(): IntArray

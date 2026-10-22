@@ -75,6 +75,12 @@ object Voices {
             say("Converting weights on the phone…")
             val err = NativeBridge.nativeImportPth(pth.absolutePath, tpl.absolutePath, dir.absolutePath, 0)
             if (err.isNotEmpty()) throw Exception(err)
+            // Bake the weights into this voice's own synth.onnx. (Overriding the template's weights at load time
+            // with SessionOptions.AddInitializer produced noise on device, so the file itself must hold them.)
+            say("Writing the voice model…")
+            val bake = NativeBridge.nativeBakeSynth(File(tpl, "synth.onnx").absolutePath,
+                File(dir, "weights.bin").absolutePath, File(dir, "synth.onnx").absolutePath)
+            if (bake.isNotEmpty()) throw Exception(bake)
             fun link(n: String, target: File) {
                 require(target.exists()) { "base file missing: ${target.name}" }
                 try { Os.symlink(target.absolutePath, File(dir, n).absolutePath) } catch (e: Exception) { target.copyTo(File(dir, n)) }
@@ -82,11 +88,13 @@ object Voices {
             link("hubert.onnx", File(base, "hubert_$ver.onnx"))
             link("fcpe_mel.onnx", File(base, "fcpe_mel.onnx"))
             link("fcpe_net.onnx", File(base, "fcpe_net.onnx"))
-            link("synth.onnx", File(tpl, "synth.onnx"))
             File(base, "fcpe_cents.f32").copyTo(File(dir, "fcpe_cents.f32"))
             // The manifest drives the NPU cache tags: HuBERT/FCPE reuse their compiled graphs across voices,
             // the synth is keyed by template + this voice's weights.
-            val synthSha = sha(shaOf(man, "templates/$key/synth.onnx") + sha256(File(dir, "weights.bin")))
+            // "baked1" in the key invalidates NPU caches compiled from the old (placeholder-weight) synth.
+            val wbin = File(dir, "weights.bin")
+            val synthSha = sha("baked1" + shaOf(man, "templates/$key/synth.onnx") + sha256(wbin))
+            wbin.delete()   // weights now live inside synth.onnx; the engine must not override them again
             fun ent(sha: String) = JSONObject().put("bytes", 0).put("sha256", sha)
             File(dir, "manifest.json").writeText(JSONObject()
                 .put("hubert.onnx", ent(shaOf(man, "hubert_$ver.onnx")))

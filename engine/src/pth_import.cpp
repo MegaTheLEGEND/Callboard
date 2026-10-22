@@ -352,4 +352,118 @@ bool pth_import(const std::string& pth, const std::string& tdir, const std::stri
   } catch (const Err& x) { if (err) *err = x.m; return false; }
 }
 
+// ------------------------------------------------------------------ bake weights into a synth.onnx copy
+bool pth_bake(const std::string& tpl, const std::string& wpath, const std::string& out, std::string* err) {
+  try {
+    // 1. index weights.bin: name -> (file offset of the float data, byte count)
+    struct W { uint64_t off = 0, bytes = 0; bool done = false; };
+    std::map<std::string, W> ws;
+    std::ifstream wf(wpath, std::ios::binary);
+    if (!wf) fail("cannot open " + wpath);
+    wf.seekg(0, std::ios::end); const uint64_t wsize = uint64_t(wf.tellg()); wf.seekg(0);
+    char magic[4]; uint32_t ver = 0, n = 0;
+    wf.read(magic, 4); wf.read(reinterpret_cast<char*>(&ver), 4); wf.read(reinterpret_cast<char*>(&n), 4);
+    if (!wf || memcmp(magic, "RVCW", 4) != 0 || ver != 1) fail("bad weights.bin");
+    for (uint32_t k = 0; k < n; ++k) {
+      uint16_t nl = 0; uint8_t nd = 0;
+      wf.read(reinterpret_cast<char*>(&nl), 2);
+      std::string name(nl, '\0'); wf.read(name.data(), nl);
+      wf.read(reinterpret_cast<char*>(&nd), 1);
+      uint64_t cnt = 1;
+      for (int d = 0; d < nd; ++d) { int64_t x = 0; wf.read(reinterpret_cast<char*>(&x), 8); cnt *= uint64_t(x); }
+      if (!wf) fail("truncated weights.bin");
+      W w; w.off = uint64_t(wf.tellg()); w.bytes = cnt * 4;
+      if (w.off + w.bytes > wsize) fail("truncated weights.bin");
+      wf.seekg(std::streamoff(w.bytes), std::ios::cur);
+      ws[name] = w;
+    }
+
+    // 2. copy the template
+    {
+      std::ifstream in(tpl, std::ios::binary);
+      if (!in) fail("cannot open " + tpl);
+      std::ofstream o(out, std::ios::binary | std::ios::trunc);
+      if (!o) fail("cannot write " + out);
+      std::vector<char> buf(1 << 20);
+      while (in) { in.read(buf.data(), std::streamsize(buf.size())); const auto g = in.gcount(); if (g > 0) o.write(buf.data(), g); }
+      o.flush();
+      if (!o) fail("write failed (disk full?)");
+    }
+
+    // 3. walk the protobuf: ModelProto.graph(7) -> GraphProto.initializer(5) -> TensorProto{dims 1, data_type 2,
+    //    name 8, raw_data 9, float_data 4, data_location 14}. Only offsets are recorded; big payloads are skipped by seek.
+    std::ifstream f(out, std::ios::binary);
+    f.seekg(0, std::ios::end); const uint64_t fsize = uint64_t(f.tellg()); f.seekg(0);
+    auto pos = [&]() { return uint64_t(f.tellg()); };
+    auto seek = [&](uint64_t p) { f.clear(); f.seekg(std::streamoff(p)); };
+    auto varint = [&]() -> uint64_t {
+      uint64_t r = 0; int sh = 0;
+      for (;;) {
+        const int c = f.get();
+        if (c == EOF) fail("template.onnx is truncated");
+        r |= uint64_t(c & 0x7f) << sh;
+        if (!(c & 0x80)) return r;
+        sh += 7; if (sh > 63) fail("template.onnx is corrupt");
+      }
+    };
+    auto skip = [&](int wt) {
+      if (wt == 0) varint();
+      else if (wt == 1) seek(pos() + 8);
+      else if (wt == 2) { const uint64_t l = varint(); seek(pos() + l); }
+      else if (wt == 5) seek(pos() + 4);
+      else fail("template.onnx is corrupt (wire type)");
+    };
+    struct Patch { uint64_t at; std::string name; };
+    std::vector<Patch> patches;
+    auto tensor = [&](uint64_t tend) {
+      std::string name; uint64_t raw_off = 0, raw_len = 0; int64_t dtype = 1, loc = 0; bool has_raw = false, has_float = false;
+      while (pos() < tend) {
+        const uint64_t tag = varint(); const int fld = int(tag >> 3), wt = int(tag & 7);
+        if (fld == 8 && wt == 2) { const uint64_t l = varint(); name.assign(l, '\0'); f.read(name.data(), std::streamsize(l)); }
+        else if (fld == 9 && wt == 2) { raw_len = varint(); raw_off = pos(); has_raw = true; seek(raw_off + raw_len); }
+        else if (fld == 2 && wt == 0) dtype = int64_t(varint());
+        else if (fld == 14 && wt == 0) loc = int64_t(varint());
+        else { if (fld == 4) has_float = true; skip(wt); }
+      }
+      auto it = ws.find(name);
+      if (it == ws.end()) return;
+      if (it->second.done) fail("template has two initializers named " + name);
+      if (loc != 0) fail("template initializer " + name + " is stored externally");
+      if (dtype != 1) fail("template initializer " + name + " is not float32");
+      if (!has_raw || has_float) fail("template initializer " + name + " is not stored as raw data");
+      if (raw_len != it->second.bytes) fail("size mismatch for " + name + " (template " + std::to_string(raw_len) + " bytes, voice " + std::to_string(it->second.bytes) + ")");
+      it->second.done = true; patches.push_back({raw_off, name});
+    };
+    while (pos() < fsize) {
+      const uint64_t tag = varint(); const int fld = int(tag >> 3), wt = int(tag & 7);
+      if (fld == 7 && wt == 2) {
+        const uint64_t l = varint(), gend = pos() + l;
+        while (pos() < gend) {
+          const uint64_t gt = varint(); const int gf = int(gt >> 3), gw = int(gt & 7);
+          if (gf == 5 && gw == 2) { const uint64_t tl = varint(), tend = pos() + tl; tensor(tend); seek(tend); }
+          else skip(gw);
+        }
+        seek(gend);
+      } else skip(wt);
+    }
+    f.close();
+    for (auto& kv : ws) if (!kv.second.done) fail("template.onnx has no initializer named " + kv.first);
+
+    // 4. write the weights over the placeholders
+    std::fstream o(out, std::ios::in | std::ios::out | std::ios::binary);
+    if (!o) fail("cannot reopen " + out);
+    std::vector<char> buf;
+    for (auto& p : patches) {
+      const W& w = ws[p.name];
+      buf.resize(w.bytes);
+      wf.clear(); wf.seekg(std::streamoff(w.off)); wf.read(buf.data(), std::streamsize(w.bytes));
+      if (!wf) fail("cannot read weights.bin");
+      o.seekp(std::streamoff(p.at)); o.write(buf.data(), std::streamsize(w.bytes));
+    }
+    o.flush();
+    if (!o) fail("write failed (disk full?)");
+    return true;
+  } catch (const Err& x) { if (err) *err = x.m; return false; }
+}
+
 }  // namespace rvc
