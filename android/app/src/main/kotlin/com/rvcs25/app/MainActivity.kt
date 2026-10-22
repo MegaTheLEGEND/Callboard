@@ -15,6 +15,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.app.Activity
 import dev.callboard.ShizukuLink
+import dev.callboard.VoiceEngine
 import dev.callboard.rvc.NativeBridge
 import java.io.File
 
