@@ -38,7 +38,6 @@ struct RuntimeParams {
   std::atomic<float> gate_db{-60.f};       // input noise gate; <= -60 disables
   std::atomic<bool> synth_noise{true};     // false = deterministic, slightly cleaner
   std::atomic<float> isolate{0.f};         // 0 = off, 0..1 voice-only noise suppression on the 16 kHz mic stream (+20 ms)
-  std::atomic<bool> auto_level{true};      // bring quiet speech to a normal level before gate/models (see leveler.h)
   std::atomic<bool> monitor_input{false};  // output = the mic signal fed to the changer (after denoise/gate/isolation), RVC muted
   std::atomic<float> pitch_stab{0.f};      // 0 = off, 0..1 f0 octave/spike rejection + smoothing
   std::atomic<float> mic_gain{1.f};        // linear input gain, applied by VoiceSession before the engine sees the mic

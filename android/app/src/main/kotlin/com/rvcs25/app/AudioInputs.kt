@@ -1,11 +1,18 @@
 package com.rvcs25.app
 
 import android.Manifest
+import android.bluetooth.BluetoothClass
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothHeadset
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.SystemClock
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Microphone devices the system offers right now (phone mic, Bluetooth headphones / hands-free kit / watch, wired,
@@ -24,12 +31,20 @@ object AudioInputs {
     /** Types that need the communication-device switch before they carry audio. */
     private val VIA_COMM = setOf(AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_HEARING_AID)
 
-    class Dev(val info: AudioDeviceInfo) {
-        val id: Int get() = info.id
-        val key: String get() = "${info.type}|${info.address}|${info.productName}"
-        val viaComm: Boolean get() = info.type in VIA_COMM
+    /**
+     * One selectable microphone. [info] is the audio device the system exposes; [bt] is a paired Bluetooth device the
+     * system does NOT expose as an audio device right now (typical for a smartwatch): it is brought up on demand
+     * through the communication-device / hands-free (HFP) link in [activate].
+     */
+    class Dev(val info: AudioDeviceInfo?, val bt: BluetoothDevice? = null, val btName: String = "") {
+        val type: Int get() = info?.type ?: AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+        val address: String get() = info?.address ?: bt?.address.orEmpty()
+        val name: String get() = info?.productName?.toString()?.trim() ?: btName
+        val id: Int get() = info?.id ?: 0
+        val key: String get() = "$type|$address|$name"
+        val viaComm: Boolean get() = type in VIA_COMM
         val label: String get() {
-            val name = info.productName?.toString()?.trim().orEmpty()
+            if (info == null) return name.ifEmpty { "Paired Bluetooth device" } + " · Bluetooth (paired)"
             return if (info.type == AudioDeviceInfo.TYPE_BUILTIN_MIC)
                 "Phone microphone" + info.address.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
             else name.ifEmpty { "Unnamed device" } + " · " + typeName(info.type)
@@ -42,6 +57,9 @@ object AudioInputs {
     /** True while the chosen device is a Bluetooth / hearing-aid type (then "unprocessed" capture does not apply). */
     @Volatile var viaComm = false; private set
     private var commSet = false
+    private var hfpProxy: BluetoothProfile? = null
+    private var hfpDevice: BluetoothDevice? = null
+    private var scoLegacy = false
 
     private fun am(ctx: Context) = ctx.getSystemService(AudioManager::class.java)
 
@@ -57,17 +75,51 @@ object AudioInputs {
         else -> "type $t"
     }
 
-    fun list(ctx: Context): List<Dev> =
-        am(ctx).getDevices(AudioManager.GET_DEVICES_INPUTS).filter { it.type in SHOWN }.map { Dev(it) }
+    private fun hasBtPermission(ctx: Context) =
+        ctx.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+
+    /** Paired audio / wearable devices (smartwatch, headset, car kit), whether or not the system exposes them as audio. */
+    @Suppress("MissingPermission")
+    private fun bonded(ctx: Context): List<BluetoothDevice> {
+        if (!hasBtPermission(ctx)) return emptyList()
+        return runCatching {
+            ctx.getSystemService(BluetoothManager::class.java)?.adapter?.bondedDevices.orEmpty().filter {
+                val c = it.bluetoothClass?.majorDeviceClass
+                c == null || c == BluetoothClass.Device.Major.AUDIO_VIDEO || c == BluetoothClass.Device.Major.WEARABLE
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    @Suppress("MissingPermission")
+    fun list(ctx: Context): List<Dev> {
+        val a = am(ctx)
+        val out = ArrayList<Dev>()
+        a.getDevices(AudioManager.GET_DEVICES_INPUTS).filter { it.type in SHOWN }.forEach { out += Dev(it) }
+        // Bluetooth devices the system can route calls to but has no live input for (shown as outputs only)
+        if (hasBtPermission(ctx)) a.availableCommunicationDevices.filter { it.type in VIA_COMM }.forEach { c ->
+            if (out.none { it.viaComm && it.address.equals(c.address, true) }) out += Dev(c)
+        }
+        // Paired devices not exposed as audio at all
+        bonded(ctx).forEach { b ->
+            if (out.none { it.address.equals(b.address, true) }) out += Dev(null, b, runCatching { b.name }.getOrNull().orEmpty())
+        }
+        return out
+    }
 
     /** Display labels; two devices with the same name get their address appended so they can be told apart. */
     fun labels(devs: List<Dev>): List<String> {
         val dup = devs.groupingBy { it.label }.eachCount()
-        return devs.map { if ((dup[it.label] ?: 0) > 1 && it.info.address.isNotBlank()) "${it.label} [${it.info.address}]" else it.label }
+        return devs.map { if ((dup[it.label] ?: 0) > 1 && it.address.isNotBlank()) "${it.label} [${it.address}]" else it.label }
     }
 
     fun selected(ctx: Context): Dev? =
-        Settings.micDeviceKey.takeIf { it.isNotEmpty() }?.let { k -> list(ctx).firstOrNull { it.key == k } }
+        Settings.micDeviceKey.takeIf { it.isNotEmpty() }?.let { k ->
+            val p = k.split('|')
+            val devs = list(ctx)
+            devs.firstOrNull { it.key == k }
+                // a Bluetooth device is the same device however the system exposes it (input, output or paired only)
+                ?: devs.firstOrNull { it.viaComm && (p.getOrNull(0)?.toIntOrNull() ?: -1) in VIA_COMM && p.size > 1 && it.address.equals(p[1], true) }
+        }
 
     fun choose(d: Dev?) {
         Settings.micDeviceKey = d?.key ?: ""
@@ -80,10 +132,39 @@ object AudioInputs {
         return t in VIA_COMM && ctx.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
     }
 
+    private fun inputIdFor(ctx: Context, addr: String): Int =
+        am(ctx).getDevices(AudioManager.GET_DEVICES_INPUTS).firstOrNull {
+            it.type in VIA_COMM && it.address.equals(addr, true)
+        }?.id ?: 0
+
+    /** Opens the hands-free (SCO) link to a paired headset / watch directly. True if the request was accepted. */
+    @Suppress("MissingPermission")
+    private fun startHfp(ctx: Context, d: Dev): Boolean {
+        if (!hasBtPermission(ctx)) return false
+        val adapter = ctx.getSystemService(BluetoothManager::class.java)?.adapter ?: return false
+        val dev = d.bt ?: runCatching { adapter.getRemoteDevice(d.address) }.getOrNull() ?: return false
+        val latch = CountDownLatch(1)
+        var proxy: BluetoothProfile? = null
+        val ok = runCatching {
+            adapter.getProfileProxy(ctx, object : BluetoothProfile.ServiceListener {
+                override fun onServiceConnected(profile: Int, p: BluetoothProfile) { proxy = p; latch.countDown() }
+                override fun onServiceDisconnected(profile: Int) {}
+            }, BluetoothProfile.HEADSET)
+        }.getOrDefault(false)
+        if (!ok || !latch.await(1500, TimeUnit.MILLISECONDS)) return false
+        val h = proxy as? BluetoothHeadset ?: return false
+        val started = runCatching { h.startVoiceRecognition(dev) }.getOrDefault(false)
+        if (started) { hfpProxy = h; hfpDevice = dev } else runCatching { adapter.closeProfileProxy(BluetoothProfile.HEADSET, h) }
+        return started
+    }
+
     /**
      * Routes the saved device for a session. Returns the Oboe device id to open (0 = system default).
-     * Blocks up to ~2.5 s while a Bluetooth link comes up, so call it from a worker thread.
+     * Blocks up to ~5 s while a Bluetooth link comes up, so call it from a worker thread. A Bluetooth device the system
+     * does not expose as an audio device (smartwatch) is brought up on demand: communication device first, then the
+     * hands-free link, then the legacy SCO call, until its microphone shows up.
      */
+    @Suppress("MissingPermission", "DEPRECATION")
     fun activate(ctx: Context): Int {
         release(ctx)
         note = ""
@@ -93,25 +174,38 @@ object AudioInputs {
             return 0
         }
         active = d.label; viaComm = d.viaComm
-        if (d.viaComm) {
-            val a = am(ctx)
-            val target = a.availableCommunicationDevices.firstOrNull { it.type == d.info.type && it.address == d.info.address }
-            val ok = target != null && try { a.setCommunicationDevice(target) } catch (e: SecurityException) { false }
-            if (ok) {
-                commSet = true
-                val end = SystemClock.elapsedRealtime() + 2500
-                while (SystemClock.elapsedRealtime() < end && a.communicationDevice?.id != target!!.id) Thread.sleep(100)
-                Thread.sleep(150)
-            } else {
-                note = if (ctx.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED)
-                    "Allow “Nearby devices” for this app to use a Bluetooth mic." else "Couldn’t switch to ${d.label}; trying it directly."
-            }
-        }
-        return d.id
+        if (!d.viaComm) return d.id
+        val a = am(ctx)
+        if (!hasBtPermission(ctx)) { note = "Allow “Nearby devices” for this app to use a Bluetooth mic."; return 0 }
+        fun live() = inputIdFor(ctx, d.address) != 0 ||
+            (commSet && a.communicationDevice?.address.equals(d.address, true))
+        var how = ""
+        val target = a.availableCommunicationDevices.firstOrNull { it.type in VIA_COMM && it.address.equals(d.address, true) }
+        if (target != null && try { a.setCommunicationDevice(target) } catch (e: SecurityException) { false }) { commSet = true; how = "call route" }
+        if (how.isEmpty() && startHfp(ctx, d)) how = "hands-free link"
+        if (how.isEmpty()) { try { a.startBluetoothSco(); a.isBluetoothScoOn = true; scoLegacy = true; how = "SCO link" } catch (e: Exception) {} }
+        if (how.isEmpty()) { note = "Couldn’t open ${d.label}; trying the default microphone."; return 0 }
+        val end = SystemClock.elapsedRealtime() + 5000
+        while (SystemClock.elapsedRealtime() < end && !live()) Thread.sleep(100)
+        Thread.sleep(150)
+        // The link may be up now but the device only appears as an input after it: set it as the route once more
+        if (!commSet) a.availableCommunicationDevices.firstOrNull { it.type in VIA_COMM && it.address.equals(d.address, true) }
+            ?.let { if (runCatching { a.setCommunicationDevice(it) }.getOrDefault(false)) commSet = true }
+        val id = inputIdFor(ctx, d.address)
+        if (id == 0) note = "${d.label}: ${how} opened but it offers no microphone yet; using the system route."
+        return id
     }
 
+    @Suppress("MissingPermission", "DEPRECATION")
     fun release(ctx: Context) {
-        if (commSet) { runCatching { am(ctx).clearCommunicationDevice() }; commSet = false }
+        val a = am(ctx)
+        if (commSet) { runCatching { a.clearCommunicationDevice() }; commSet = false }
+        if (scoLegacy) { runCatching { a.stopBluetoothSco(); a.isBluetoothScoOn = false }; scoLegacy = false }
+        hfpProxy?.let { p ->
+            hfpDevice?.let { dev -> runCatching { (p as BluetoothHeadset).stopVoiceRecognition(dev) } }
+            runCatching { ctx.getSystemService(BluetoothManager::class.java)?.adapter?.closeProfileProxy(BluetoothProfile.HEADSET, p) }
+        }
+        hfpProxy = null; hfpDevice = null
         active = ""; viaComm = false
     }
 }

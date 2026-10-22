@@ -140,7 +140,7 @@ object Voices {
     }
 
     private fun releaseUrl(): String {
-        val b = Settings.baseUrl.trim()
+        val b = Settings.baseUrl.trim().ifEmpty { "MegaTheLEGEND/Callboard" }
         if (b.isEmpty()) throw Exception("Base models are not on this phone yet. Enter your GitHub repo (owner/name) under “Base models” " +
             "after running its “Build base models” workflow — or adb push the base folder (see README).")
         val u = if (Regex("^[\\w.-]+/[\\w.-]+$").matches(b)) "https://github.com/$b/releases/latest/download/" else b

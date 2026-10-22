@@ -227,8 +227,8 @@ void Engine::process_block(const float* in48, float* out48) {
   } else {
     dn_active_ = false;
   }
-  if (block48 % InputConditioner::kFrame == 0)  // blip gate (follows Voice isolation) + auto level, before the absolute gate
-    cond_.process(tmp48_.data(), block48, std::min(iso, 1.f), params.auto_level.load(std::memory_order_relaxed));
+  if (block48 % InputConditioner::kFrame == 0)  // blip gate (follows Voice isolation), before the absolute gate
+    cond_.process(tmp48_.data(), block48, std::min(iso, 1.f));
   const float gate = params.gate_db.load(std::memory_order_relaxed);
   if (gate > -60.f) noise_gate(tmp48_.data(), block48, kDeviceZc, gate);
   const size_t n16 = std::min(mic_rs_->process(tmp48_.data(), block48, tmp16_.data()), in16_.size());
