@@ -85,7 +85,7 @@ class MainActivity : Activity() {
             gravity = android.view.Gravity.CENTER_VERTICAL
             addView(voiceLbl, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(Button(context).apply {
-                text = "Voices"; isAllCaps = false
+                text = "Voices / add"; isAllCaps = false
                 setOnClickListener { startActivity(Intent(this@MainActivity, VoicesActivity::class.java)) }
             })
         })
@@ -146,7 +146,7 @@ class MainActivity : Activity() {
         // Settings may have changed on the settings page.
         pushParams()
         val v = Voices.active()
-        voiceLbl.text = "Voice: " + (v?.label ?: "none — open Voices to add one")
+        voiceLbl.text = "Voice: " + (v?.label ?: "none yet")
         if (loaded && !loading && loadedVoice != (v?.id ?: ""))
             status.text = "Voice changed. Tap “Load model” to switch (a new voice compiles for the NPU once)."
         else if (loaded && !loading && loadedSig != Settings.loadSignature)
@@ -169,7 +169,7 @@ class MainActivity : Activity() {
         if (loading) return
         val vid = Voices.active()?.id ?: ""
         if (!File(packDir, "engine.cfg").exists()) {
-            status.text = "No voice yet. Open Voices to add a .pth or import a pack."
+            status.text = "Step 1: tap “Voices” and add a voice (.pth)."
             return
         }
         loading = true; loaded = false
@@ -235,8 +235,8 @@ class MainActivity : Activity() {
 
     private fun refreshStatus() {
         if (!File(packDir, "engine.cfg").exists())
-            status.text = "No voice yet. Open Voices to add a .pth or import a pack."
-        else if (!loaded) status.text = "Voice found. Tap “Load model”."
+            status.text = "Step 1: tap “Voices” and add a voice (.pth)."
+        else if (!loaded) status.text = "Step 2: tap “Load model”, then Start."
     }
 
     // --------------------------------------------------------------- stats

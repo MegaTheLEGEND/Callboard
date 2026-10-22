@@ -27,6 +27,7 @@ class VoicesActivity : Activity() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private val accent = 0xFF4FC3F7.toInt()
+    private val dim = 0xFF9AA0A6.toInt()
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -34,32 +35,40 @@ class VoicesActivity : Activity() {
         fun text(t: String, size: Float = 14f, top: Int = 8) = TextView(this).apply { text = t; textSize = size; setPadding(0, dp(top), 0, 0) }
         root.addView(text("‹ Back", 15f, 0).apply { setTextColor(accent); setOnClickListener { finish() } })
         root.addView(text("Voices", 24f, 6))
+        status = text("", 13f, 8).apply { setTextColor(accent) }
+        root.addView(status)
+
+        root.addView(text("Your voices", 18f, 18))
+        root.addView(text("Tap a voice to select it.", 12f, 2).apply { setTextColor(dim) })
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(list)
 
-        root.addView(text("Add a voice", 18f, 22))
-        root.addView(text("Paste a link to an RVC voice (.pth, or a .zip containing one — e.g. a Hugging Face file link), " +
-            "or choose a .pth from the phone. v1 and v2 voices work. Pitch-guided (f0) voices only.", 12f))
-        url = EditText(this).apply { hint = "https://…/model.pth"; setSingleLine(); textSize = 14f }
-        name = EditText(this).apply { hint = "Voice name"; setSingleLine(); textSize = 14f }
+        root.addView(text("Add a voice", 18f, 24))
+        root.addView(text("Paste a link to a .pth (or a .zip containing one, e.g. a Hugging Face file link), or pick a .pth from the phone. " +
+            "Pitch-guided (f0) v1/v2 voices only.", 12f, 2).apply { setTextColor(dim) })
+        url = EditText(this).apply { hint = "Link to .pth or .zip"; setSingleLine(); textSize = 14f }
+        name = EditText(this).apply { hint = "Voice name (optional)"; setSingleLine(); textSize = 14f }
         root.addView(url); root.addView(name)
         btnGo = Button(this).apply { text = "Download & add"; isAllCaps = false; setOnClickListener { fromUrl() } }
-        btnPick = Button(this).apply { text = "Choose .pth file"; isAllCaps = false
+        btnPick = Button(this).apply { text = "Choose .pth from phone"; isAllCaps = false
             setOnClickListener { if (!busy) startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), 1) } }
         root.addView(btnGo); root.addView(btnPick)
-        root.addView(text("Base models (downloaded automatically when a voice needs them)", 12f, 14))
+
+        root.addView(text("Base models", 18f, 24))
+        val t = Voices.installedTemplates()
+        root.addView(text("HuBERT, pitch and synth models every voice needs. Baked into the APK when built by the workflow; " +
+            "anything missing is downloaded from your GitHub release.", 12f, 2).apply { setTextColor(dim) })
+        root.addView(text("GitHub repo (owner/name) with the “Build base models + APK” release:", 12f, 8))
         root.addView(EditText(this).apply {
-            hint = "GitHub repo, e.g. you/rvc-s25"; setSingleLine(); textSize = 14f; setText(Settings.baseUrl)
+            hint = "owner/repo"; setSingleLine(); textSize = 14f; setText(Settings.baseUrl)
             addTextChangedListener(object : android.text.TextWatcher {
-                override fun afterTextChanged(e: android.text.Editable?) { Settings.baseUrl = e.toString() }
+                override fun afterTextChanged(e: android.text.Editable?) { Settings.baseUrl = e.toString().trim() }
                 override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                 override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             })
         })
-        val t = Voices.installedTemplates()
-        root.addView(text(if (t.isEmpty()) "No base models on the phone yet — they download when you add your first voice."
-            else "Installed templates: ${t.joinToString()}", 12f))
-        status = text("", 13f, 10); root.addView(status)
+        root.addView(text(if (t.isEmpty()) "On this phone: nothing yet (fetched when you add a voice)."
+            else "On this phone: ${t.joinToString()}", 12f, 4).apply { setTextColor(dim) })
         setContentView(ScrollView(this).apply { addView(root) })
         refresh()
     }
@@ -89,8 +98,8 @@ class VoicesActivity : Activity() {
                 val f = getFile(say)
                 val v = Voices.addFromPth(f, nm, say)
                 Settings.voiceId = v.id
-                say("Added “${v.name}” (${v.version}). Go back and tap Load model — the first load of a new voice compiles for the NPU.")
-            } catch (e: Throwable) { say("Failed: ${e.message}") }
+                say("Added “${v.name}” (${v.version}). Next: go back and tap “Load model” (first load compiles for the NPU).")
+            } catch (e: Throwable) { say("Couldn’t add voice: ${e.message}") }
             finally {
                 Voices.cleanTemp()
                 ui.post { busy = false; btnGo.isEnabled = true; btnPick.isEnabled = true

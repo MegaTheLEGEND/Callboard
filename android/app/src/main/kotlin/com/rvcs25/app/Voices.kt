@@ -67,7 +67,7 @@ object Voices {
         val key = "${ver}_$sr"
         val tpl = File(base, "templates/$key")
         ensureBase(ver, key, say)
-        val man = JSONObject(File(base, "manifest.json").readText())
+        val man = baseManifest()
         val id = name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(24).ifEmpty { "voice" } +
             "-" + System.currentTimeMillis().toString(36)
         val dir = File(root, id).apply { mkdirs() }
@@ -86,17 +86,27 @@ object Voices {
             File(base, "fcpe_cents.f32").copyTo(File(dir, "fcpe_cents.f32"))
             // The manifest drives the NPU cache tags: HuBERT/FCPE reuse their compiled graphs across voices,
             // the synth is keyed by template + this voice's weights.
-            val synthSha = sha(man.getJSONObject("templates/$key/synth.onnx").getString("sha256") + sha256(File(dir, "weights.bin")))
+            val synthSha = sha(shaOf(man, "templates/$key/synth.onnx") + sha256(File(dir, "weights.bin")))
             fun ent(sha: String) = JSONObject().put("bytes", 0).put("sha256", sha)
             File(dir, "manifest.json").writeText(JSONObject()
-                .put("hubert.onnx", ent(man.getJSONObject("hubert_$ver.onnx").getString("sha256")))
-                .put("fcpe_mel.onnx", ent(man.getJSONObject("fcpe_mel.onnx").getString("sha256")))
-                .put("fcpe_net.onnx", ent(man.getJSONObject("fcpe_net.onnx").getString("sha256")))
+                .put("hubert.onnx", ent(shaOf(man, "hubert_$ver.onnx")))
+                .put("fcpe_mel.onnx", ent(shaOf(man, "fcpe_mel.onnx")))
+                .put("fcpe_net.onnx", ent(shaOf(man, "fcpe_net.onnx")))
                 .put("synth.onnx", ent(synthSha)).toString())
             File(dir, "config.json").writeText(JSONObject().put("version", ver).put("tgt_sr", sr).toString())
             File(dir, "voice.json").writeText(JSONObject().put("name", name).toString())
         } catch (e: Throwable) { dir.deleteRecursively(); throw e }
         return read(id, dir, name)
+    }
+
+    private fun baseManifest() = runCatching { JSONObject(File(base, "manifest.json").readText()) }.getOrDefault(JSONObject())
+    private fun saveManifest(m: JSONObject) { base.mkdirs(); File(base, "manifest.json").writeText(m.toString()) }
+    private fun entryOf(f: File) = JSONObject().put("bytes", f.length()).put("sha256", sha256(f))
+    /** sha256 for a base file; computed from disk (and remembered) if the manifest has no entry for it. */
+    private fun shaOf(m: JSONObject, rel: String): String {
+        m.optJSONObject(rel)?.optString("sha256")?.takeIf { it.isNotEmpty() }?.let { return it }
+        val f = File(base, rel); require(f.exists()) { "base file missing: $rel" }
+        val e = entryOf(f); m.put(rel, e); saveManifest(m); return e.getString("sha256")
     }
 
     private fun releaseUrl(): String {
@@ -112,21 +122,25 @@ object Voices {
     private fun ensureBase(ver: String, key: String, say: (String) -> Unit) {
         val need = listOf("hubert_$ver.onnx", "fcpe_mel.onnx", "fcpe_net.onnx", "fcpe_cents.f32", "templates/$key/synth.onnx",
             "templates/$key/template.params", "templates/$key/template.config", "templates/$key/template.cfg")
-        if (need.all { File(base, it).exists() } && File(base, "manifest.json").exists()) return
         base.mkdirs()
-        val local = File(base, "manifest.json").takeIf { it.exists() }?.let { JSONObject(it.readText()) } ?: JSONObject()
+        val local = baseManifest()
+        if (need.all { File(base, it).exists() && local.has(it) }) return
         val bundled = runCatching { JSONObject(app.assets.open("base/manifest.json").bufferedReader().use { it.readText() }) }.getOrNull()
         var remote: JSONObject? = null; var url = ""
         for (rel in need) {
             val dest = File(base, rel)
-            if (dest.exists()) continue
             dest.parentFile!!.mkdirs()
+            if (dest.exists()) {
+                val sz = local.optJSONObject(rel)?.optLong("bytes", 0) ?: 0L
+                if (dest.length() == 0L || (sz > 0 && dest.length() != sz)) dest.delete()   // broken leftover: fetch again
+                else { if (!local.has(rel)) local.put(rel, bundled?.optJSONObject(rel) ?: entryOf(dest)); saveManifest(local); continue }
+            }
             val be = bundled?.optJSONObject(rel)
             if (be != null) {
                 say("Unpacking built-in base model $rel…")
                 val part = File(dest.path + ".part")
                 app.assets.open("base/$rel").use { i -> part.outputStream().use { i.copyTo(it, 1 shl 20) } }
-                part.renameTo(dest); local.put(rel, be)
+                part.renameTo(dest); local.put(rel, be); saveManifest(local)
             } else {
                 if (remote == null) {
                     url = releaseUrl(); say("Fetching the list of base models…")
@@ -135,10 +149,10 @@ object Voices {
                 val e = remote.optJSONObject(rel)
                     ?: throw Exception("This build has no $rel. Re-run the “Build base models + APK” workflow with variant $key.")
                 fetchFile(url + e.getString("asset"), dest, e.getString("sha256")) { say("Downloading base model $rel… $it") }
-                local.put(rel, e)
+                local.put(rel, e); saveManifest(local)
             }
         }
-        File(base, "manifest.json").writeText(local.toString())
+        saveManifest(local)
     }
 
     private fun open(u: String) = (URL(u).openConnection() as HttpURLConnection).apply {
