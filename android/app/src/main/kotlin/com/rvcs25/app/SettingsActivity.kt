@@ -41,7 +41,7 @@ class SettingsActivity : Activity() {
             setOnClickListener { finish() }
         })
         root.addView(TextView(this).apply { text = "Settings"; textSize = 24f })
-        root.addView(note("Changes are saved automatically and kept between launches."))
+        root.addView(note("Changes are saved automatically and kept between launches. (branch rcmpe)"))
 
         // ---------------------------------------------------------------- Startup
         section("Startup")

@@ -134,7 +134,8 @@ void RetrievalIndex::search_range(const float* q, const float* qn, int Tpad, int
                                   int hi, TopK* out) const {
   for (int t = 0; t < T; ++t) out[t].reset();
   float dots[16];
-  for (int i = lo; i < hi; ++i) {
+  const int step = stride_.load(std::memory_order_relaxed);
+  for (int i = lo; i < hi; i += step) {
     const uint16_t* v = vecs_ + size_t(i) * d_;
     for (int g = 0; g < Tpad; g += 4) dot4(v, q + size_t(g) * d_, d_, dots + g);
     const float vn = norms_[i];

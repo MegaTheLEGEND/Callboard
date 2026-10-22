@@ -258,9 +258,9 @@ void Engine::process_block(const float* in48, float* out48) {
   if (pstab > 0.f && c.fcpe_frames >= 12) {
     if (!stab_active_) { raw_f0_.clear(); stab_active_ = true; }
     raw_f0_.shift(int(n16 / 160));
-    float hist[24];
-    raw_f0_.tail_f0(24, hist);  // hist[0..9) = the frames that precede this block's frame 0
-    stabilize_f0(f0raw_.data(), c.fcpe_frames, hist, 9, pstab);
+    std::vector<float> hist(size_t(c.fcpe_frames) + 8);
+    raw_f0_.tail_f0(c.fcpe_frames + 8, hist.data());  // hist[0..9) = the frames that precede this block's frame 0
+    stabilize_f0(f0raw_.data(), c.fcpe_frames, hist.data(), 9, pstab);
     raw_f0_.write_tail(nullptr, f0raw_.data() + 3, c.fcpe_frames - 4);
   } else {
     stab_active_ = false;
@@ -284,7 +284,14 @@ void Engine::process_block(const float* in48, float* out48) {
       std::memcpy(blend_pre_.data(), f, cnt * sizeof(float));
       const auto tb = Clock::now();
       index_.blend(f, total - first, rate, 2);
-      index_ms_.store(ms_since(tb), std::memory_order_relaxed);
+      const float ims = ms_since(tb);
+      index_ms_.store(ims, std::memory_order_relaxed);
+      {  // keep k-NN under 25 % of the block time: coarser sampling of the index when it is too slow
+        const float budget = 0.25f * float(c.block * 10);
+        const int st = index_.stride();
+        if (ims > budget) index_.set_stride(int(st * std::min(ims / budget, 2.f)) + 1);
+        else if (st > 1 && ims * float(st) / float(st - 1) < 0.7f * budget) index_.set_stride(st - 1);
+      }
       double num = 0, den = 0;  // how far the retrieved neighbours moved the features
       for (size_t i = 0; i < cnt; ++i) { const double d = double(f[i]) - double(blend_pre_[i]); num += d * d; den += double(blend_pre_[i]) * blend_pre_[i]; }
       index_shift_.store(float(std::sqrt(num / (den + 1e-12))), std::memory_order_relaxed);
