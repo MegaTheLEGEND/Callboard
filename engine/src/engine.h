@@ -98,7 +98,8 @@ class Engine {
   VoiceIsolator isolator_;
   NeuralDenoiser denoiser_;
   InputConditioner cond_;
-  bool dn_active_ = false;
+  bool dn_active_ = false, dn_slow_off_ = false;
+  int dn_slow_cnt_ = 0;
   bool iso_active_ = false, stab_active_ = false;
   Rng rng_;
 

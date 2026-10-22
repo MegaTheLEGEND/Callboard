@@ -19,7 +19,7 @@ class NeuralDenoiser {
     using T = ONNXTensorElementDataType;
     const T F32 = ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
     states_.assign(kStates, 0.f); new_states_.assign(kStates, 0.f); in_.assign(kFrame, 0.f); out_.assign(kFrame, 0.f);
-    BackendConfig b = cfg; b.kind = BackendConfig::Kind::Cpu; b.cpu_threads = 2;
+    BackendConfig b = cfg; b.kind = BackendConfig::Kind::Cpu; b.cpu_threads = 1;  // ~100 tiny ops per frame: a thread pool costs more in wake-ups than it saves
     if (!g_.init(env, path, "denoiser",
                  {{"input_frame", {kFrame}, F32}, {"states", {kStates}, F32}, {"atten_lim_db", {}, F32}},
                  {{"enhanced_audio_frame", {kFrame}, F32}, {"new_states", {kStates}, F32}, {"lsnr", {1}, F32}},
@@ -27,6 +27,8 @@ class NeuralDenoiser {
     g_.bind_input(0, in_.data()); g_.bind_input(1, states_.data()); g_.bind_input(2, &atten_);
     g_.bind_output(0, out_.data()); g_.bind_output(1, new_states_.data()); g_.bind_output(2, &lsnr_);
     ok_ = true;
+    for (int i = 0; i < 8; ++i) { g_.run(); }  // first runs allocate / page in weights: keep that out of the stream
+    reset();
     return true;
   }
   bool available() const { return ok_; }

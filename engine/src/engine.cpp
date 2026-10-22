@@ -219,13 +219,19 @@ void Engine::process_block(const float* in48, float* out48) {
   // 1. gate, 48k -> 16k, slide the 16k window --------------------------------
   std::memcpy(tmp48_.data(), in48, sizeof(float) * block48);
   const float iso = params.isolate.load(std::memory_order_relaxed);
-  const bool use_dn = iso > 0.f && denoiser_.available() && block48 % NeuralDenoiser::kFrame == 0;
+  const bool use_dn = iso > 0.f && denoiser_.available() && !dn_slow_off_ && block48 % NeuralDenoiser::kFrame == 0;
   if (use_dn) {  // neural denoiser replaces the spectral isolator while the model is present
     if (!dn_active_) { denoiser_.reset(); dn_active_ = true; }
     denoiser_.set_strength(iso);
+    const auto td = Clock::now();
     denoiser_.process(tmp48_.data(), block48);
+    // too slow for this phone (> 40 % of the block for 3 blocks in a row): fall back to the light spectral isolator
+    // instead of making the whole stream choppy; switching Voice isolation off and on again retries.
+    dn_slow_cnt_ = ms_since(td) > 0.4f * float(c.block * 10) ? dn_slow_cnt_ + 1 : 0;
+    if (dn_slow_cnt_ >= 3) { dn_slow_off_ = true; dn_active_ = false; }
   } else {
     dn_active_ = false;
+    if (iso <= 0.f) { dn_slow_off_ = false; dn_slow_cnt_ = 0; }
   }
   if (block48 % InputConditioner::kFrame == 0)  // blip gate (follows Voice isolation), before the absolute gate
     cond_.process(tmp48_.data(), block48, std::min(iso, 1.f));
