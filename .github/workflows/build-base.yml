@@ -22,8 +22,11 @@ jobs:
         with: { python-version: "3.12" }
       - name: Install Python deps
         run: |
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          # torchaudio must come from the same CPU index as torch. torchfcpe depends on torchaudio, and if it is
+          # not already installed, pip pulls the default CUDA wheel from PyPI (needs libcudart.so.13).
+          pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
           pip install -r export/requirements.txt huggingface_hub
+          python -c "import torch, torchaudio; print(torch.__version__, torchaudio.__version__)"
       - name: HuBERT weights
         run: python -c "from huggingface_hub import snapshot_download as d; d('lj1995/VoiceConversionWebUI', allow_patterns='hubert_base/*', local_dir='assets')"
       - name: Build base models
