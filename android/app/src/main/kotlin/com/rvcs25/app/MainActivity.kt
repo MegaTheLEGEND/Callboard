@@ -32,6 +32,7 @@ class MainActivity : Activity() {
     private lateinit var btnRun: Button
     private lateinit var btnLive: Button
     private lateinit var btnGrant: Button
+    private lateinit var btnMon: Button
     private lateinit var helper: TextView
     private lateinit var skPitch: SeekBar
     private lateinit var skIndex: SeekBar
@@ -109,6 +110,15 @@ class MainActivity : Activity() {
             addView(btnGrant, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(btnLive, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         })
+        btnMon = Button(this).apply {
+            text = "Monitor mic input (RVC muted): OFF"
+            setOnClickListener {
+                VoiceEngine.monitorInput = !VoiceEngine.monitorInput
+                text = "Monitor mic input (RVC muted): " + if (VoiceEngine.monitorInput) "ON" else "OFF"
+                VoiceEngine.pushParams()
+            }
+        }
+        root.addView(btnMon)
         helper = TextView(this).apply {
             typeface = android.graphics.Typeface.MONOSPACE; textSize = 11f; setPadding(0, dp(6), 0, 0)
         }

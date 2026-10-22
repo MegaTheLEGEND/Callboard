@@ -112,6 +112,8 @@ bool Engine::init(const std::string& dir, const BackendConfig& cfg, std::string*
 
   // ---- DSP state -----------------------------------------------------------
   mic_rs_ = std::make_unique<StreamResampler>(ResamplerKernel::design(1, kDeviceSr / 16000));
+  mon_rs_ = std::make_unique<StreamResampler>(ResamplerKernel::design(kDeviceSr / 16000, 1));
+  mon48_.assign(size_t(block48) * 2 + 16, 0.f);
   const int g = std::gcd(c.tgt_sr, kDeviceSr);
   out_kernel_ = ResamplerKernel::design(kDeviceSr / g, c.tgt_sr / g);
   if (size_t(c.out_samples) * (kDeviceSr / g) / (c.tgt_sr / g) != wav48_.size()) {
@@ -183,6 +185,7 @@ bool Engine::init(const std::string& dir, const BackendConfig& cfg, std::string*
 void Engine::reset() {
   std::fill(in16_.begin(), in16_.end(), 0.f);
   mic_rs_->reset();
+  mon_rs_->reset();
   sola_->reset();
   pitch_cache_.clear();
   raw_f0_.clear();
@@ -319,6 +322,13 @@ void Engine::process_block(const float* in48, float* out48) {
   t = Clock::now();
   resample_block(out_kernel_, audio_.data(), audio_.size(), wav48_.data(), wav48_.size());
   sola_->process(wav48_.data(), out48);
+  if (params.monitor_input.load(std::memory_order_relaxed)) {  // hear exactly what the changer is fed
+    const size_t m = std::min(mon_rs_->process(tmp16_.data(), n16, mon48_.data()), mon48_.size());
+    std::memset(out48, 0, sizeof(float) * block48);
+    std::memcpy(out48, mon48_.data(), sizeof(float) * std::min<size_t>(m, size_t(block48)));
+  } else {
+    mon_rs_->reset();
+  }
   last_.post = ms_since(t);
   last_.total = ms_since(t_start);
 }

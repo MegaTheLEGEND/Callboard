@@ -48,6 +48,9 @@ object NativeBridge {
     /** Voice isolation (mic noise suppression, +20 ms) and pitch stabiliser, 0..100 % each, 0 = off. */
     external fun nativeSetCleanup(isolatePct: Int, pitchStabPct: Int)
 
+    /** true = output the mic signal that feeds the voice changer (RVC muted). */
+    external fun nativeSetMonitor(on: Boolean)
+
     external fun nativeSetParams(pitchSemitones: Float, indexRate: Float, gateDb: Float, synthNoise: Boolean)
 
     /** See jni_bridge.cpp: [0] total ms ... [18] mic peak 0..1 since the last call, [19] session running. */
