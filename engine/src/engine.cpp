@@ -42,7 +42,8 @@ bool PackConfig::load(const std::string& path, PackConfig* o, std::string* err) 
   o->hubert_samples = I("hubert_samples", 0); o->hubert_frames = I("hubert_frames", 0);
   o->fcpe_samples = I("fcpe_samples", 0); o->fcpe_frames = I("fcpe_frames", 0);
   o->fcpe_bins = I("fcpe_bins", 360); o->fcpe_half_window = I("fcpe_half_window", 4);
-  o->fcpe_threshold = F("fcpe_threshold", 0.006f); o->out_samples = I("out_samples", 0);
+  o->fcpe_threshold = F("fcpe_threshold", 0.03f);
+  o->fcpe_zero_pad = I("fcpe_zero_pad", 1) != 0; o->out_samples = I("out_samples", 0);
   o->source_lin_w = F("source_lin_w", 1.f); o->source_lin_b = F("source_lin_b", 0.f);
   o->has_index = I("has_index", 0) != 0;
   if (o->sola_buffer * 10 > o->block * 10 * 4) { if (err) *err = "bad sola geometry"; return false; }
@@ -163,6 +164,14 @@ bool Engine::init(const std::string& dir, const BackendConfig& cfg, std::string*
   synth_.bind_input(3, noise_.data());
   synth_.bind_output(0, audio_.data());
 
+  // optional neural denoiser (48 kHz, before gate/resample); absent or failing -> spectral isolator only
+  if (std::ifstream(dir + "/denoiser_model.onnx").good()) {
+    std::string e;
+    BackendConfig dcfg = cfg; dcfg.cache_tag.clear();
+    if (!denoiser_.init(env_, dir + "/denoiser_model.onnx", dcfg, &e)) {
+      denoiser_ = NeuralDenoiser();  // leave unavailable; stats/logcat carry the reason
+    }
+  }
   ready_ = true;
   // warm-up: first HTP executions are slow (VTCM/graph init); keep that out of the stream
   std::vector<float> z(block48, 0.f), o(block48);
@@ -177,6 +186,7 @@ void Engine::reset() {
   sola_->reset();
   pitch_cache_.clear();
   raw_f0_.clear();
+  dn_active_ = false;
   iso_active_ = false;  // next process_block() re-primes the isolator
   stab_active_ = false;
 }
@@ -204,12 +214,20 @@ void Engine::process_block(const float* in48, float* out48) {
 
   // 1. gate, 48k -> 16k, slide the 16k window --------------------------------
   std::memcpy(tmp48_.data(), in48, sizeof(float) * block48);
+  const float iso = params.isolate.load(std::memory_order_relaxed);
+  const bool use_dn = iso > 0.f && denoiser_.available() && block48 % NeuralDenoiser::kFrame == 0;
+  if (use_dn) {  // neural denoiser replaces the spectral isolator while the model is present
+    if (!dn_active_) { denoiser_.reset(); dn_active_ = true; }
+    denoiser_.set_strength(iso);
+    denoiser_.process(tmp48_.data(), block48);
+  } else {
+    dn_active_ = false;
+  }
   const float gate = params.gate_db.load(std::memory_order_relaxed);
   if (gate > -60.f) noise_gate(tmp48_.data(), block48, kDeviceZc, gate);
   const size_t n16 = std::min(mic_rs_->process(tmp48_.data(), block48, tmp16_.data()), in16_.size());
   {  // voice-only noise suppression (adds VoiceIsolator::latency_samples() = 20 ms while on)
-    const float iso = params.isolate.load(std::memory_order_relaxed);
-    if (iso > 0.f) {
+    if (iso > 0.f && !use_dn) {
       if (!iso_active_) { isolator_.reset(); iso_active_ = true; }
       isolator_.set_strength(iso);
       isolator_.process(tmp16_.data(), n16);
@@ -235,7 +253,7 @@ void Engine::process_block(const float* in48, float* out48) {
   // pitch post-processing -> rolling cache -> window-aligned tails
   t = Clock::now();
   fcpe_decode(latent_.data(), c.fcpe_frames, c.fcpe_bins, cents_.data(), c.fcpe_threshold,
-              c.fcpe_half_window, f0raw_.data());
+              c.fcpe_half_window, c.fcpe_zero_pad, f0raw_.data());
   const float pstab = params.pitch_stab.load(std::memory_order_relaxed);
   if (pstab > 0.f && c.fcpe_frames >= 12) {
     if (!stab_active_) { raw_f0_.clear(); stab_active_ = true; }

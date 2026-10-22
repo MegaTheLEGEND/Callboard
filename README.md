@@ -1,11 +1,11 @@
 # RVC S25 — realtime voice conversion on the Galaxy S25 Ultra (Snapdragon 8 Elite NPU)
 
 A single-voice, static-shape port of [RVC](https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI)
-for realtime mic → converted-voice playback, running HuBERT, FCPE pitch and the vocoder on the
+for realtime mic → converted-voice playback, running HuBERT, RMVPE pitch and the vocoder on the
 Hexagon NPU through ONNX Runtime's QNN execution provider.
 
 ```
-mic 48k ─► resample 16k ─┬─► FCPE mel (CPU) ─► FCPE net (NPU) ─► decode/interp/coarse (CPU) ─┐
+mic 48k ─► resample 16k ─┬─► RMVPE mel (CPU) ─► RMVPE net (NPU/CPU) ─► decode/interp/coarse (CPU) ─┐
                          └─► HuBERT (NPU) ─► index blend (CPU, NEON) ────────────────────────┤
                                                                                             ▼
                                       sine excitation + noise (CPU) ─► synth: enc/flow/NSF-HiFiGAN (NPU)
@@ -112,7 +112,10 @@ Both run inside the engine (`engine/src/cleanup.cpp`), are on by default (50 % /
 * **Pitch stabiliser** — post-processes the FCPE track before unvoiced interpolation: drops f0 outside 50–1100 Hz, folds octave
   errors, rejects isolated jumps (tolerance widens the longer pitch was missing), then a 3/5-point median and light smoothing.
   Tracks glides and normal intonation; very high values flatten expressive pitch.
-* RMVPE is a *pitch extractor* (an alternative to FCPE), not a noise suppressor; this app uses FCPE.
+* **Neural denoiser** — if `denoiser_model.onnx` (streaming DeepFilterNet-style, 480-sample frames @48 kHz) is in the voice/base folder, the
+  *Voice isolation* slider drives it instead of the spectral suppressor (strength → max attenuation 6–60 dB, ≥95 % = unlimited). It runs on the
+  CPU at 48 kHz before the gate/resampler (~3 ms per 10 ms frame on x86; adds roughly one STFT window of delay). Without the file the spectral one is used.
+* **Pitch is RMVPE** (`rmvpe.pt`, RVC decode: threshold 0.03, zero-padded ±4-bin local average). Graph/file names stay `fcpe_*` for compatibility.
 
 Host test: `cmake --build build && ctest -R cleanup`.
 

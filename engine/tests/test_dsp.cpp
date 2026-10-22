@@ -120,7 +120,7 @@ static void test_pitch() {
     auto cents = load<float>("fcpe_cents.f32");
     auto exp = load<float>("fcpe_expect.f32");
     std::vector<float> out(16);
-    fcpe_decode(lat.data(), 16, 360, cents.data(), 0.006f, 4, out.data());
+    fcpe_decode(lat.data(), 16, 360, cents.data(), 0.006f, 4, false, out.data());
     double worst = 0;
     int unv = 0;
     for (int i = 0; i < 16; ++i) {

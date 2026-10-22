@@ -38,10 +38,16 @@ jobs:
           pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
           pip install -r export/requirements.txt huggingface_hub
           python -c "import torch, torchaudio; print(torch.__version__, torchaudio.__version__)"
-      - name: HuBERT weights
-        run: python -c "from huggingface_hub import snapshot_download as d; d('lj1995/VoiceConversionWebUI', allow_patterns='hubert_base/*', local_dir='assets')"
+      - name: Download assets (HuBERT, RMVPE, denoiser)
+        run: |
+          python - <<'PY'
+          from huggingface_hub import snapshot_download, hf_hub_download
+          snapshot_download('lj1995/VoiceConversionWebUI', allow_patterns=['hubert_base/*', 'rmvpe.pt'], local_dir='assets')
+          hf_hub_download('kimtos-labs/denoiser-dfn3', 'denoiser_model.onnx', local_dir='assets')
+          PY
+          ls -la assets assets/hubert_base
       - name: Build base models
-        run: python export/build_base.py --hubert-dir assets/hubert_base --out base --variants ${{ inputs.variants }}
+        run: python export/build_base.py --hubert-dir assets/hubert_base --rmvpe assets/rmvpe.pt --denoiser assets/denoiser_model.onnx --out base --variants ${{ inputs.variants }}
       - name: Flatten for release
         run: |
           python - <<'PY'
@@ -58,7 +64,7 @@ jobs:
           bake, allv = os.environ["BAKE"].split(), os.environ["ALL"].split()
           assert set(bake) <= set(allv), "bake must be a subset of variants"
           m = json.load(open("base/manifest.json"))
-          keep = {"fcpe_mel.onnx", "fcpe_net.onnx", "fcpe_cents.f32"}
+          keep = {"fcpe_mel.onnx", "fcpe_net.onnx", "fcpe_cents.f32"} | ({"denoiser_model.onnx"} & set(m))
           for v in bake:
               keep.add(f"hubert_{v.split('_')[0]}.onnx")
               keep |= {r for r in m if r.startswith(f"templates/{v}/")}

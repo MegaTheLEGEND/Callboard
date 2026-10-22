@@ -97,6 +97,7 @@ object Voices {
             link("fcpe_mel.onnx", File(base, "fcpe_mel.onnx"))
             link("fcpe_net.onnx", File(base, "fcpe_net.onnx"))
             File(base, "fcpe_cents.f32").copyTo(File(dir, "fcpe_cents.f32"))
+            File(base, "denoiser_model.onnx").takeIf { it.exists() }?.let { link("denoiser_model.onnx", it) }  // optional neural denoiser
             // The manifest drives the NPU cache tags: HuBERT/FCPE reuse their compiled graphs across voices,
             // the synth is keyed by template + this voice's weights.
             // "baked1" in the key invalidates NPU caches compiled from the old (placeholder-weight) synth.
@@ -149,7 +150,8 @@ object Voices {
     /** Gets whatever this voice type needs (HuBERT for its version, FCPE, its synth template): from the models baked
      *  into the APK if present, otherwise from the GitHub release. Already-present files are never touched. */
     private fun ensureBase(ver: String, key: String, say: (String) -> Unit) {
-        val need = listOf("hubert_$ver.onnx", "fcpe_mel.onnx", "fcpe_net.onnx", "fcpe_cents.f32", "templates/$key/synth.onnx",
+        val hasDn = runCatching { JSONObject(app.assets.open("base/manifest.json").bufferedReader().use { it.readText() }).has("denoiser_model.onnx") }.getOrDefault(false)
+        val need = listOfNotNull("denoiser_model.onnx".takeIf { hasDn }) + listOf("hubert_$ver.onnx", "fcpe_mel.onnx", "fcpe_net.onnx", "fcpe_cents.f32", "templates/$key/synth.onnx",
             "templates/$key/template.params", "templates/$key/template.config", "templates/$key/template.cfg")
         base.mkdirs()
         val local = baseManifest()

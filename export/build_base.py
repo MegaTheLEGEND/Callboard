@@ -109,7 +109,7 @@ def build_template(version: str, cfg: list, args, fcpe: dict, out_dir: str) -> N
     open(os.path.join(out_dir, "template.config"), "w").write(config_canon(c) + "\n")
     d = geo.to_dict(); d["z_noise_scale"] = 0.66666
     lines = [f"{k} {d[k]}" for k in CFG_KEYS] + [f"z_noise_scale {d['z_noise_scale']}"]
-    lines += [f"fcpe_bins {fcpe['bins']}", f"fcpe_threshold {fcpe['threshold']}", f"fcpe_half_window {fcpe['half_window']}"]
+    lines += [f"fcpe_bins {fcpe['bins']}", f"fcpe_threshold {fcpe['threshold']}", f"fcpe_half_window {fcpe['half_window']}", f"fcpe_zero_pad {fcpe.get('zero_pad', 0)}"]
     open(os.path.join(out_dir, "template.cfg"), "w").write("\n".join(lines) + "\n")
 
     # ---- self-test: weights injected into the template by name must reproduce PyTorch
@@ -162,6 +162,8 @@ def main() -> None:
     ap.add_argument("--hubert-dir", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--variants", nargs="*", default=["v2_40000", "v1_40000"])
+    ap.add_argument("--rmvpe", default="assets/rmvpe.pt")
+    ap.add_argument("--denoiser", default="assets/denoiser_model.onnx", help="optional streaming denoiser ONNX copied into base/")
     ap.add_argument("--from-pth", nargs="*", default=[])
     ap.add_argument("--block", type=int, default=10)
     ap.add_argument("--extra", type=int, default=50)
@@ -190,12 +192,14 @@ def main() -> None:
         from simplify import simplify_file
         ft = os.path.join(tmp, "fcpe"); os.makedirs(ft)
         Geometry().dump(os.path.join(ft, "config.json"))
-        py("export_fcpe.py", "--out", ft, *geo_args)
+        py("export_rmvpe.py", "--out", ft, "--rmvpe", os.path.abspath(args.rmvpe), *geo_args)
         simplify_file(f"{ft}/fcpe_net.onnx", f"{ft}/n.onnx"); os.replace(f"{ft}/n.onnx", f"{ft}/fcpe_net.onnx")
         fcpe = json.load(open(f"{ft}/fcpe.json"))
         for n in ("fcpe_mel.onnx", "fcpe_net.onnx"):
             shutil.copy(f"{ft}/{n}", f"{out}/{n}")
         np.asarray(fcpe["cent_table"], dtype=np.float32).tofile(f"{out}/fcpe_cents.f32")
+        if os.path.exists(args.denoiser):
+            shutil.copy(args.denoiser, f"{out}/denoiser_model.onnx")
 
         # HuBERT per feature version (v1 = layer 9 + projection, v2 = last layer)
         for ver in sorted({v for v, _ in variants.values()}):

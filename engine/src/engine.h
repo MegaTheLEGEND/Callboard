@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "denoiser.h"
 #include "cleanup.h"
 #include "dsp.h"
 #include "ort_graph.h"
@@ -21,7 +22,8 @@ struct PackConfig {
   int flow_head = 26, dec_head = 24;
   int hubert_samples = 10560, hubert_frames = 32;
   int fcpe_samples = 2400, fcpe_frames = 16, fcpe_bins = 360, fcpe_half_window = 4;
-  float fcpe_threshold = 0.006f;
+  float fcpe_threshold = 0.03f;
+  bool fcpe_zero_pad = true;  // RMVPE decode (RVC to_local_average_cents); false = torchfcpe clamp
   int out_samples = 6000;
   float source_lin_w = 1.f, source_lin_b = 0.f;
   bool has_index = false;
@@ -91,6 +93,8 @@ class Engine {
   PitchCache pitch_cache_;
   PitchCache raw_f0_{256};      // stabilised f0 before interpolation/key shift, aligned with pitch_cache_
   VoiceIsolator isolator_;
+  NeuralDenoiser denoiser_;
+  bool dn_active_ = false;
   bool iso_active_ = false, stab_active_ = false;
   Rng rng_;
 

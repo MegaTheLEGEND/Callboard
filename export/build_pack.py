@@ -81,7 +81,7 @@ def write_engine_cfg(cfg: dict, out: str) -> None:
             "fcpe_frames", "out_samples", "source_lin_w", "source_lin_b", "z_noise_scale"]
     lines = [f"{k} {cfg[k]}" for k in keys]
     lines += [f"fcpe_bins {f['bins']}", f"fcpe_threshold {f['threshold']}",
-              f"fcpe_half_window {f['half_window']}", f"has_index {1 if cfg['retrieval'] else 0}"]
+              f"fcpe_half_window {f['half_window']}", f"fcpe_zero_pad {f.get('zero_pad', 0)}", f"has_index {1 if cfg['retrieval'] else 0}"]
     open(f"{out}/engine.cfg", "w").write("\n".join(lines) + "\n")
     np.asarray(f["cent_table"], dtype=np.float32).tofile(f"{out}/fcpe_cents.f32")
 
@@ -99,12 +99,13 @@ def main() -> None:
     ap.add_argument("--extra", type=int, default=50, help="x10 ms of left context")
     ap.add_argument("--crossfade", type=int, default=5, help="x10 ms")
     ap.add_argument("--index-size", type=int, default=0, help="k-means reduce index (0 = keep all)")
+    ap.add_argument("--rmvpe", default="assets/rmvpe.pt", help="RVC rmvpe.pt (pitch extractor)")
     ap.add_argument("--skip-verify", action="store_true")
     ap.add_argument("--shared-cache", help="dir that keeps the voice-independent HuBERT/FCPE graphs between "
                     "builds, so a second voice of the same version only exports its synth")
     a = ap.parse_args()
     # sub-steps run with cwd=export/, so every path must be absolute
-    for k in ("pth", "index", "hubert_dir", "out", "shared_cache"):
+    for k in ("pth", "index", "hubert_dir", "out", "shared_cache", "rmvpe"):
         v = getattr(a, k)
         if v:
             setattr(a, k, os.path.abspath(v))
@@ -126,7 +127,7 @@ def main() -> None:
         if fcpe_hit:
             print("[pack] reusing cached FCPE graphs")
         else:
-            run("export_fcpe.py", "--out", work, *geo)
+            run("export_rmvpe.py", "--out", work, "--rmvpe", a.rmvpe, *geo)
         if hub_hit:
             print("[pack] reusing cached HuBERT graph")
         elif a.random_init:
@@ -148,8 +149,6 @@ def main() -> None:
 
         if not a.skip_verify:
             run("verify_synth.py", "--pth", a.pth, "--build", work)
-            if not fcpe_hit:
-                run("verify_fcpe.py", "--build", work)
 
         # keep the voice-independent graphs only once they have passed verification
         if not hub_hit:
