@@ -176,6 +176,9 @@ void Engine::reset() {
   mic_rs_->reset();
   sola_->reset();
   pitch_cache_.clear();
+  raw_f0_.clear();
+  iso_active_ = false;  // next process_block() re-primes the isolator
+  stab_active_ = false;
 }
 
 bool Engine::npu_cached(const char* tag) const {
@@ -204,6 +207,16 @@ void Engine::process_block(const float* in48, float* out48) {
   const float gate = params.gate_db.load(std::memory_order_relaxed);
   if (gate > -60.f) noise_gate(tmp48_.data(), block48, kDeviceZc, gate);
   const size_t n16 = std::min(mic_rs_->process(tmp48_.data(), block48, tmp16_.data()), in16_.size());
+  {  // voice-only noise suppression (adds VoiceIsolator::latency_samples() = 20 ms while on)
+    const float iso = params.isolate.load(std::memory_order_relaxed);
+    if (iso > 0.f) {
+      if (!iso_active_) { isolator_.reset(); iso_active_ = true; }
+      isolator_.set_strength(iso);
+      isolator_.process(tmp16_.data(), n16);
+    } else {
+      iso_active_ = false;
+    }
+  }
   std::memmove(in16_.data(), in16_.data() + n16, sizeof(float) * (in16_.size() - n16));
   std::memcpy(in16_.data() + in16_.size() - n16, tmp16_.data(), sizeof(float) * n16);
   last_.pre = ms_since(t);
@@ -223,6 +236,17 @@ void Engine::process_block(const float* in48, float* out48) {
   t = Clock::now();
   fcpe_decode(latent_.data(), c.fcpe_frames, c.fcpe_bins, cents_.data(), c.fcpe_threshold,
               c.fcpe_half_window, f0raw_.data());
+  const float pstab = params.pitch_stab.load(std::memory_order_relaxed);
+  if (pstab > 0.f && c.fcpe_frames >= 12) {
+    if (!stab_active_) { raw_f0_.clear(); stab_active_ = true; }
+    raw_f0_.shift(int(n16 / 160));
+    float hist[24];
+    raw_f0_.tail_f0(24, hist);  // hist[0..9) = the frames that precede this block's frame 0
+    stabilize_f0(f0raw_.data(), c.fcpe_frames, hist, 9, pstab);
+    raw_f0_.write_tail(nullptr, f0raw_.data() + 3, c.fcpe_frames - 4);
+  } else {
+    stab_active_ = false;
+  }
   interp_unvoiced(f0raw_.data(), c.fcpe_frames);
   const float key = std::exp2(params.pitch_semitones.load(std::memory_order_relaxed) / 12.f);
   for (int i = 0; i < c.fcpe_frames; ++i) f0raw_[i] *= key;

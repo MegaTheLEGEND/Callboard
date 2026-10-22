@@ -1,6 +1,7 @@
 package dev.callboard
 
 import android.content.Context
+import com.rvcs25.app.Settings
 import dev.callboard.rvc.NativeBridge
 import java.io.File
 
@@ -38,6 +39,7 @@ object VoiceEngine {
     fun pushParams() {
         if (!loaded) return
         NativeBridge.nativeSetParams(pitch.toFloat(), index / 100f, gateDb(), synthNoise)
+        NativeBridge.nativeSetCleanup(Settings.voiceIsolation, Settings.pitchStabilize)
     }
 
     /** Slow (minutes the first time: the NPU graphs are compiled once and cached). Runs on its own thread. */

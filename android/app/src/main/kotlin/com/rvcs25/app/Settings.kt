@@ -9,6 +9,7 @@ import kotlin.reflect.KProperty
  * Every user-facing option, saved to disk so the app comes up the same way every time.
  * The defaults below ARE the startup state:
  *   Wi-Fi off · helper mic capture off · force un-mute off · index rate 0 · audio path Direct · helper mic source Auto
+ *   voice isolation 50 % · pitch stabiliser 60 %
  *
  * Call [init] once (RvcApp does); read/write the properties from anywhere.
  */
@@ -63,6 +64,11 @@ object Settings {
     /** Chosen input device (AudioInputs key: type|address|name); "" = system default. */
     var micDeviceKey by StrPref("micDeviceKey", "")
     var micDeviceName by StrPref("micDeviceName", "")
+
+    /** Voice isolation: suppresses steady background noise and silences the engine when no voice is present. 0 = off, 0..100. */
+    var voiceIsolation by IntPref("voiceIsolation", 50, 0, 100)
+    /** Pitch stabiliser: removes octave jumps and random pitch spikes, smooths jitter. 0 = off, 0..100. */
+    var pitchStabilize by IntPref("pitchStabilize", 60, 0, 100)
 
     val gateDb: Float get() = if (gate == 0) -60f else -(60f - gate)
 

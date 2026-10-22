@@ -145,6 +145,7 @@ class MainActivity : Activity() {
             Settings.pitch.toFloat(), Settings.indexRate / 100f, Settings.gateDb, Settings.synthNoise,
         )
         NativeBridge.nativeSetMicGain(Settings.micGainDb.toFloat())
+        NativeBridge.nativeSetCleanup(Settings.voiceIsolation, Settings.pitchStabilize)
     }
 
     override fun onResume() {

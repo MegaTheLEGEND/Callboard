@@ -68,6 +68,10 @@ class PitchCache {
   // (rtrvc.py: cache[4-n:] = pitch[3:-1]).
   void update(const int64_t* coarse, const float* f0, int n, int shift);
   void tail(int n, int64_t* coarse_out, float* f0_out) const;
+  // update() split in two: shift the history left, then write `cnt` frames at the end (coarse may be null).
+  void shift(int shift);
+  void write_tail(const int64_t* coarse, const float* f0, int cnt);
+  void tail_f0(int n, float* f0_out) const;
 
  private:
   std::vector<int64_t> coarse_;

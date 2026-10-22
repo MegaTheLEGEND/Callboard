@@ -112,6 +112,17 @@ class SettingsActivity : Activity() {
             label = { if (it == 0) "Noise gate: off" else "Noise gate: −${60 - it} dB" },
         ) { Settings.gate = it }
         slider(
+            max = 100, init = Settings.voiceIsolation,
+            label = { if (it == 0) "Voice isolation: off" else "Voice isolation: $it %" },
+            help = "Removes steady background noise (fans, hiss, road, hum) and silences the voice engine when you are not talking, " +
+                "so noise does not turn into mumbling. Adds 20 ms. Does not remove other people talking. Applies when you return to the main screen.",
+        ) { Settings.voiceIsolation = it }
+        slider(
+            max = 100, init = Settings.pitchStabilize,
+            label = { if (it == 0) "Pitch stabiliser: off" else "Pitch stabiliser: $it %" },
+            help = "Fixes sudden octave jumps and random pitch spikes and smooths pitch jitter. Too high flattens expressive pitch. Applies when you return to the main screen.",
+        ) { Settings.pitchStabilize = it }
+        slider(
             max = 100, init = Settings.slack,
             label = { "Output safety buffer: $it ms" },
             help = "Lower = less delay, but more risk of crackling.",

@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "cleanup.h"
 #include "dsp.h"
 #include "ort_graph.h"
 #include "retrieval.h"
@@ -33,6 +34,8 @@ struct RuntimeParams {
   std::atomic<float> index_rate{0.5f};     // 0 disables retrieval (saves ~10 ms)
   std::atomic<float> gate_db{-60.f};       // input noise gate; <= -60 disables
   std::atomic<bool> synth_noise{true};     // false = deterministic, slightly cleaner
+  std::atomic<float> isolate{0.f};         // 0 = off, 0..1 voice-only noise suppression on the 16 kHz mic stream (+20 ms)
+  std::atomic<float> pitch_stab{0.f};      // 0 = off, 0..1 f0 octave/spike rejection + smoothing
   std::atomic<float> mic_gain{1.f};        // linear input gain, applied by VoiceSession before the engine sees the mic
 };
 
@@ -86,6 +89,9 @@ class Engine {
   ResamplerKernel out_kernel_;
   std::unique_ptr<Sola> sola_;
   PitchCache pitch_cache_;
+  PitchCache raw_f0_{256};      // stabilised f0 before interpolation/key shift, aligned with pitch_cache_
+  VoiceIsolator isolator_;
+  bool iso_active_ = false, stab_active_ = false;
   Rng rng_;
 
   std::vector<float> cents_;

@@ -99,6 +99,23 @@ Tap **Settings** on the main screen. Everything is grouped, explained, and saved
 *Reset all settings* restores these. Settings marked "apply on next Load model" (sustained mode, CPU/strict debug) only
 take effect when you reload the model; the main screen tells you when a reload is needed.
 
+## Voice isolation and pitch stabiliser (Settings → Voice)
+
+Both run inside the engine (`engine/src/cleanup.cpp`), are on by default (50 % / 60 %) and are live-tunable; 0 turns them off.
+
+* **Voice isolation** — streaming spectral noise suppressor on the 16 kHz mic stream before HuBERT/FCPE: per-bin noise-floor
+  tracking, Wiener gain, plus a speech gate (hold 150–250 ms) that fades the signal to near silence when nothing in 100 Hz–4 kHz
+  stands above the noise floor. Handles steady noise (fans, hiss, road, hum). It does **not** separate a second talker or music
+  (that needs a neural separator such as RNNoise/DeepFilterNet, which cannot be fetched or built here). Adds 20 ms while on.
+  Android's own `NoiseSuppressor` / `VOICE_COMMUNICATION` source is still available via *Raw microphone* off and *Helper mic
+  source*; it is device-dependent and stacking it with this one can warble, so keep *Raw microphone* on.
+* **Pitch stabiliser** — post-processes the FCPE track before unvoiced interpolation: drops f0 outside 50–1100 Hz, folds octave
+  errors, rejects isolated jumps (tolerance widens the longer pitch was missing), then a 3/5-point median and light smoothing.
+  Tracks glides and normal intonation; very high values flatten expressive pitch.
+* RMVPE is a *pitch extractor* (an alternative to FCPE), not a noise suppressor; this app uses FCPE.
+
+Host test: `cmake --build build && ctest -R cleanup`.
+
 ## Tuning
 
 * The stats panel shows compute vs the block budget. `OK` means compute < 80 % of the block.
@@ -144,4 +161,4 @@ build/offline_run --pack pack --in in48k.wav --out eng.wav --no-noise --index-ra
 
 FP16 weight files (halve the 600 MB pack) · ADPF performance-hint session for sustained clocks ·
 INT8/INT16 QDQ quantisation calibrated on your voice · run HuBERT/FCPE on separate HTP contexts concurrently ·
-noise suppression on the mic path · multiple baked voices.
+a neural denoiser/separator for competing talkers · multiple baked voices.

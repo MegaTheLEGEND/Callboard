@@ -18,6 +18,7 @@ endif()
 
 set(CORE_SRC
   src/dsp.cpp
+  src/cleanup.cpp
   src/retrieval.cpp
   src/ort_graph.cpp
   src/pth_import.cpp
@@ -56,6 +57,7 @@ else()
 
   add_executable(test_dsp tests/test_dsp.cpp src/dsp.cpp src/retrieval.cpp)
   target_link_libraries(test_dsp Threads::Threads)
+  add_executable(test_cleanup tests/test_cleanup.cpp src/cleanup.cpp src/dsp.cpp)
   add_executable(test_pth_import tests/test_pth_import.cpp src/pth_import.cpp)
   add_executable(test_index_import tests/test_index_import.cpp src/index_import.cpp src/retrieval.cpp)
   target_link_libraries(test_index_import Threads::Threads)
@@ -73,6 +75,7 @@ else()
   endif()
 
   enable_testing()
+  add_test(NAME cleanup COMMAND test_cleanup)
   add_test(NAME ring COMMAND test_ring)
   add_test(NAME session COMMAND test_session)
   add_test(NAME dsp COMMAND test_dsp ${CMAKE_BINARY_DIR}/vectors)

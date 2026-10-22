@@ -171,13 +171,22 @@ void PitchCache::clear() {
   std::fill(coarse_.begin(), coarse_.end(), 0);
   std::fill(f0_.begin(), f0_.end(), 0.f);
 }
-void PitchCache::update(const int64_t* coarse, const float* f0, int n, int shift) {
+void PitchCache::shift(int shift) {
   const int cap = int(coarse_.size());
   std::memmove(coarse_.data(), coarse_.data() + shift, sizeof(int64_t) * (cap - shift));
   std::memmove(f0_.data(), f0_.data() + shift, sizeof(float) * (cap - shift));
-  const int cnt = n - 4;  // pitch[3 : n-1]
-  std::memcpy(coarse_.data() + cap - cnt, coarse + 3, sizeof(int64_t) * cnt);
-  std::memcpy(f0_.data() + cap - cnt, f0 + 3, sizeof(float) * cnt);
+}
+void PitchCache::write_tail(const int64_t* coarse, const float* f0, int cnt) {
+  const int cap = int(coarse_.size());
+  if (coarse) std::memcpy(coarse_.data() + cap - cnt, coarse, sizeof(int64_t) * cnt);
+  std::memcpy(f0_.data() + cap - cnt, f0, sizeof(float) * cnt);
+}
+void PitchCache::update(const int64_t* coarse, const float* f0, int n, int shift_frames) {
+  shift(shift_frames);
+  write_tail(coarse + 3, f0 + 3, n - 4);  // pitch[3 : n-1]
+}
+void PitchCache::tail_f0(int n, float* f0_out) const {
+  std::memcpy(f0_out, f0_.data() + f0_.size() - n, sizeof(float) * n);
 }
 void PitchCache::tail(int n, int64_t* coarse_out, float* f0_out) const {
   const int cap = int(coarse_.size());

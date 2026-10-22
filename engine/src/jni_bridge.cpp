@@ -276,6 +276,13 @@ JNIEXPORT void JNICALL Java_dev_callboard_rvc_NativeBridge_nativeSetParams(
   g.engine->params.synth_noise = synth_noise;
 }
 
+// Voice isolation (noise suppression on the mic stream) and pitch stabiliser, 0..100 % each (0 = off).
+JNIEXPORT void JNICALL Java_dev_callboard_rvc_NativeBridge_nativeSetCleanup(JNIEnv*, jobject, jint isolate_pct, jint pitch_stab_pct) {
+  if (!g.engine) return;
+  g.engine->params.isolate = std::min(std::max(isolate_pct, 0), 100) / 100.f;
+  g.engine->params.pitch_stab = std::min(std::max(pitch_stab_pct, 0), 100) / 100.f;
+}
+
 // Mic gain in dB (0 = unchanged). Applied to every mic source before the engine; safe to call any time.
 JNIEXPORT void JNICALL Java_dev_callboard_rvc_NativeBridge_nativeSetMicGain(JNIEnv*, jobject, jfloat db) {
   if (!g.engine) return;
