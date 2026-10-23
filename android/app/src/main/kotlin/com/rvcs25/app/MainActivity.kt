@@ -152,6 +152,7 @@ class MainActivity : Activity() {
         stopBtn = barButton("■ STOP") { Player.stop() }
         muteBtn = barButton("Mute") { toggleMute() }
         endBtn = barButton("End") { hangUp() }
+        muteBtn.maxLines = 2
         for ((i, v) in listOf(stopBtn, muteBtn, endBtn).withIndex()) {
             row.addView(v, LinearLayout.LayoutParams(0, dp(48), if (i == 0) 1.15f else 1f).apply { if (i > 0) leftMargin = dp(8) })
         }
@@ -262,13 +263,23 @@ class MainActivity : Activity() {
         val svc = RvcApp.link.service ?: run { flash("Connect the Shizuku helper first (tap its chip)."); return }
         // Go by what the button shows: while a clip plays the helper holds the system flag clear, so it can't be read then.
         val want = !shownMuted
+        val changerLive = voiceChangerLive()
         shownMuted = want
         muteTouchedAt = SystemClock.elapsedRealtime()
+        // Unmuting while a voice changer is live means "I'm talking now": switch the voice changer off first.
+        if (!want && changerLive) VoiceService.stop(this)
         Thread {
             val ok = runCatching { svc.setMicMuted(want) }.getOrDefault(false)
             if (!ok) flash("Couldn't change mute.")
+            if (!want && changerLive) {          // once more after the voice changer has let go of the call
+                SystemClock.sleep(700)
+                runCatching { svc.setMicMuted(false) }
+            }
         }.start()
     }
+
+    /** A voice changer (RVC or classic) is feeding the call right now. */
+    private fun voiceChangerLive() = VoiceService.running && (VoiceService.mode == "live" || VoiceService.mode == "classic")
 
     private fun hangUp() {
         if (!Player.inCall(this)) { flash("No call to end."); return }
@@ -480,7 +491,9 @@ class MainActivity : Activity() {
                     (Player.playingId != null || System.currentTimeMillis() - Player.lastEndAt < 1500)) ||
                     SystemClock.elapsedRealtime() - muteTouchedAt < 700
                 if (!busy) shownMuted = inCall && Player.micMuted(this@MainActivity)
-                muteBtn.text = if (shownMuted) "Muted" else "Mute"
+                val vcMuted = shownMuted && voiceChangerLive()
+                muteBtn.text = if (vcMuted) "Muted (Voice Changer)" else if (shownMuted) "Muted" else "Mute"
+                muteBtn.textSize = if (vcMuted) 11f else 13f
                 styleBtn(muteBtn, Cb.WARN, shownMuted, !inCall)
                 styleBtn(stopBtn, Cb.TEXT, false)
                 styleBtn(endBtn, Cb.DANGER, true, !inCall)

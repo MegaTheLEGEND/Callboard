@@ -41,6 +41,8 @@ object Settings {
     var shellMic by BoolPref("shellMic", false)
     /** Keep the call un-muted even if muted in the dialer. */
     var keepUnmuted by BoolPref("keepUnmuted", false)
+    /** Mute the dialer when a voice changer goes live (the far end hears the changed voice, not your mic). */
+    var muteOnLive by BoolPref("muteOnLive", true)
     /** 16 kHz uplink (HD-voice calls only), otherwise 8 kHz. */
     var hd16k by BoolPref("hd16k", false)
     /** 0 = Auto, 1 = Redirection, 2 = Direct. */

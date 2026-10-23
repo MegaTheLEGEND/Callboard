@@ -76,6 +76,14 @@ class SettingsActivity : Activity() {
             Settings.shellMic,
         ) { Settings.shellMic = it; refreshMicRow() }
 
+        toggle(
+            "Mute the dialer when a voice changer goes live",
+            "Starting a live call on either voice changer mutes the call in the dialer, and the home screen shows “Muted (Voice Changer)”. " +
+                "Unmuting there stops the voice changer. Turns off “Keep call un-muted” while live. If your mic reads silent while live, " +
+                "turn this off: some phones also silence mic capture when the call is muted.",
+            Settings.muteOnLive,
+        ) { Settings.muteOnLive = it }
+
         micRow = choice(
             "Helper mic source",
             "Only used when helper capture is on.",

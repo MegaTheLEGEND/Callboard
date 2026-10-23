@@ -93,7 +93,8 @@ object LiveVoice {
         }
         try {
             svc.setMethod(method)
-            svc.setKeepUnmuted(keepUnmuted)
+            // Auto-mute needs the helper to leave the platform mute flag alone.
+            svc.setKeepUnmuted(if (Settings.muteOnLive) false else keepUnmuted)
 
             // Uplink: engine -> pipe -> helper Injector -> call. The helper paces and drops/pads as needed.
             val up = ParcelFileDescriptor.createPipe()
@@ -127,6 +128,8 @@ object LiveVoice {
 
             active = true
             pump = Thread({ pumpLoop(rate) }, "uplink-pump").apply { priority = Thread.MAX_PRIORITY; start() }
+            // Live voice changer = dialer muted (the far end hears the changed voice, not the raw mic).
+            if (Settings.muteOnLive) runCatching { svc.setMicMuted(true) }
             return ""
         } catch (t: Throwable) {
             val helper = runCatching { svc.status() }.getOrDefault("")
