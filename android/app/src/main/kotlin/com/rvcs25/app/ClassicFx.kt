@@ -237,9 +237,12 @@ internal class AppMic(
         val frame = 960
         val min = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (min <= 0) return "mic buffer size $min"
-        // A Bluetooth mic only carries audio through the call link, so ask for the communication source first.
+        // A Bluetooth mic uses the same source as RVC's Oboe input (voice recognition). Not VOICE_COMMUNICATION: Android treats it
+        // as privacy-sensitive and silences it while a call is up.
         val sources = when {
-            AudioInputs.viaComm -> listOf(MediaRecorder.AudioSource.VOICE_COMMUNICATION, MediaRecorder.AudioSource.MIC)
+            AudioInputs.viaComm -> listOf(
+                MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+            )
             unprocessed -> listOf(MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.MIC)
             else -> listOf(MediaRecorder.AudioSource.MIC)
         }
@@ -248,6 +251,7 @@ internal class AppMic(
         for (src in sources) {
             try {
                 val x = AudioRecord.Builder().setAudioSource(src)
+                    .setPrivacySensitive(false)      // a privacy-sensitive capture is muted during a phone call
                     .setAudioFormat(
                         AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                             .setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build()
@@ -258,7 +262,14 @@ internal class AppMic(
         }
         val rc = r ?: return "mic not available${if (why.isEmpty()) "" else ": $why"}"
         // The Bluetooth input can show up a moment after the link opens, so look it up again if activate() had no id.
-        val devId = if (device != 0) device else if (AudioInputs.viaComm) AudioInputs.activeInputId(ctx) else 0
+        var devId = device
+        if (devId == 0 && AudioInputs.viaComm) {
+            val end = android.os.SystemClock.elapsedRealtime() + 3000
+            while (devId == 0 && android.os.SystemClock.elapsedRealtime() < end) {
+                devId = AudioInputs.activeInputId(ctx)
+                if (devId == 0) android.os.SystemClock.sleep(100)
+            }
+        }
         if (devId != 0) {
             ctx.getSystemService(AudioManager::class.java).getDevices(AudioManager.GET_DEVICES_INPUTS)
                 .firstOrNull { it.id == devId }?.let { rc.setPreferredDevice(it) }

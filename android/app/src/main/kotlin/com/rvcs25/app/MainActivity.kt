@@ -105,7 +105,11 @@ class MainActivity : Activity() {
         // ---- header
         val header = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(14), dp(20), dp(6)) }
         val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        titleRow.addView(ImageView(this).apply { setImageResource(R.drawable.ic_callboard_mark) },
+        titleRow.addView(ImageView(this).apply {
+            setImageResource(R.drawable.ic_callboard_mark)
+            contentDescription = "Settings"
+            setOnClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
+        },
             LinearLayout.LayoutParams(dp(40), dp(40)).apply { rightMargin = dp(10) })
         titleRow.addView(TextView(this).apply {
             text = SpannableString("CallBoard").apply {
@@ -116,8 +120,6 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         rvcPill = pill("●  Voice changer ›", Cb.MUTED) { openVoiceChanger() }
         titleRow.addView(rvcPill)
-        titleRow.addView(pill("⚙", Cb.TEXT, Cb.SURFACE2) { startActivity(Intent(this, SettingsActivity::class.java)) },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8) })
         header.addView(titleRow)
 
         val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(12), 0, 0) }

@@ -199,7 +199,7 @@ object LiveVoice {
         val bt = dev?.viaComm == true
         val candidates = when {
             micSource != 0 -> listOf(micSource)
-            bt -> listOf(7, 1)                                   // a Bluetooth link carries the call-quality (communication) source
+            bt -> listOf(6, 1)                                   // voice recognition, like RVC's input (7 is privacy-sensitive: muted in a call)
             else -> listOf(if (unprocessed) 9 else 1, 1).distinct()   // 9 = UNPROCESSED, 1 = MIC
         }
         for (src in candidates) {

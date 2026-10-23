@@ -59,7 +59,7 @@ internal class MicCapture(private val ctx: Context) {
         check(minRec > 0) { "record buffer size $minRec" }
         val fmt = AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT)
             .setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build()
-        val rec = AudioRecord.Builder().setAudioSource(source).setAudioFormat(fmt)
+        val rec = AudioRecord.Builder().setAudioSource(source).setPrivacySensitive(false).setAudioFormat(fmt)
             .setBufferSizeInBytes(maxOf(minRec, frame * 2 * 8))
             .also { AudioBuilderContext.apply(it, ctx, Context::class.java) { ShellEnv.prepareAudioAttribution(ctx) } }
             .build()
