@@ -48,6 +48,7 @@ class MainActivity : Activity() {
     private lateinit var grid: LinearLayout
     private lateinit var helperChip: TextView
     private lateinit var callChip: TextView
+    private lateinit var loopChip: TextView
     private lateinit var noteView: TextView
     private lateinit var rvcPill: TextView
     private lateinit var stopBtn: TextView
@@ -124,6 +125,10 @@ class MainActivity : Activity() {
         chips.addView(helperChip)
         chips.addView(callChip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             .apply { leftMargin = dp(8) })
+        loopChip = pill("") { Player.loop = !Player.loop; styleLoop() }
+        chips.addView(loopChip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            .apply { leftMargin = dp(8) })
+        styleLoop()
         header.addView(chips)
 
         noteView = TextView(this).apply {
@@ -237,6 +242,17 @@ class MainActivity : Activity() {
             if (fill) setColor(color) else { setColor(Cb.alpha(color, 0x18)); setStroke(dp(1), Cb.alpha(color, 0xAA)) }
         }
         v.alpha = if (dim) 0.45f else 1f
+    }
+
+    /** Loop pill: red while off, green while looping. */
+    private fun styleLoop() {
+        val on = Player.loop
+        val c = if (on) Cb.ACCENT else Cb.DANGER
+        loopChip.text = "↻  Loop"
+        loopChip.setTextColor(c)
+        loopChip.background = GradientDrawable().apply {
+            cornerRadius = dp(20).toFloat(); setColor(Cb.alpha(c, 0x26)); setStroke(dp(1), c)
+        }
     }
 
     private fun flash(msg: String) { flashMsg = msg; flashAt = System.currentTimeMillis() }

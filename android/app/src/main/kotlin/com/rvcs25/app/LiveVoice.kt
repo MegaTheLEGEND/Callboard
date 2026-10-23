@@ -30,6 +30,11 @@ object LiveVoice {
     @Volatile var rate = 8000; private set
     /** True while the classic (modulation) voice changer feeds the call instead of the RVC engine. */
     @Volatile var classicMode = false; private set
+    /** Why the helper mic could not be used (and the app mic took over), for the UI. */
+    @Volatile var micNote = ""; private set
+    /** Peak (0..32767) of the mic going in and of the audio going into the call since the UI last reset them. */
+    @Volatile var inPeak = 0
+    @Volatile var outPeak = 0
     @Volatile private var fx: ClassicFx? = null
     @Volatile private var dec: Decimator? = null
     @Volatile private var ring: ShortRing? = null
@@ -71,6 +76,7 @@ object LiveVoice {
     private fun begin(classic: Boolean, ctx: Context, slackMs: Int, rate: Int, shellMic: Boolean, unprocessed: Boolean, inputDevice: Int): String {
         stop()
         this.rate = rate
+        micNote = ""; inPeak = 0; outPeak = 0
         clearMix()
         appCtx = ctx.applicationContext
         val svc: IShell = RvcApp.link.service ?: return "Shizuku helper not connected (start Shizuku, tap Grant Shizuku)"
@@ -98,7 +104,13 @@ object LiveVoice {
             // A specific input device (Bluetooth, USB, ...) can only be captured by the app's own mic path: the
             // helper's recorder cannot be pointed at a device.
             var shellOk = false
-            if (shellMic && inputDevice == 0) shellOk = startShellMic(svc, unprocessed)
+            // The mic reader threads check [active], so it must already be true when they start (else they quit at once).
+            active = true
+            if (shellMic && inputDevice == 0) {
+                shellOk = startShellMic(svc, unprocessed)
+                if (!shellOk) micNote = (micNote.ifEmpty { "helper mic unavailable" }) +
+                    "; using the app mic, which Android may silence during a call"
+            }
             if (!shellOk) {
                 if (classic) {
                     val m = AppMic(ctx.applicationContext, inputDevice, unprocessed,
@@ -160,6 +172,9 @@ object LiveVoice {
 
     /** One 20 ms frame of 48 kHz mic audio, from either the helper mic pipe or the app mic. */
     private fun onMic(buf: ShortArray, n: Int) {
+        var pk = 0
+        for (i in 0 until n) { val v = kotlin.math.abs(buf[i].toInt()); if (v > pk) pk = v }
+        if (pk > inPeak) inPeak = pk
         if (classicMode) {
             val f = fx; val d = dec; val r = ring
             if (f != null && d != null && r != null) { f.process(buf, n); d.process(buf, n, r) }
@@ -175,6 +190,7 @@ object LiveVoice {
             try {
                 try { svc.startMic(pipe[1], MIC_RATE, src) } finally { pipe[1].close() }
             } catch (t: Throwable) {
+                micNote = "helper mic (source $src): ${t.message}"
                 runCatching { pipe[0].close() }
                 continue
             }
@@ -227,11 +243,15 @@ object LiveVoice {
                     NativeBridge.nativePullUplink(shorts, n)
                 }
                 mixInto(shorts, n)
+                var opk = 0
                 for (i in 0 until n) {
                     val s = shorts[i].toInt()
+                    val a = if (s < 0) -s else s
+                    if (a > opk) opk = a
                     bytes[2 * i] = s.toByte()
                     bytes[2 * i + 1] = (s shr 8).toByte()
                 }
+                if (opk > outPeak) outPeak = opk
                 upOut?.write(bytes) ?: break
                 next += 20_000_000L
                 val wait = next - SystemClock.elapsedRealtimeNanos()

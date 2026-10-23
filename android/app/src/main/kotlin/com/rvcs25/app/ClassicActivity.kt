@@ -182,7 +182,8 @@ class ClassicActivity : Activity() {
         LiveVoice.method = Settings.method
         LiveVoice.micSource = Settings.micSource
         LiveVoice.keepUnmuted = Settings.keepUnmuted
-        val why = VoiceService.startClassicLive(this, if (Settings.hd16k) 16000 else 8000, Settings.shellMic, Settings.rawMic)
+        // The helper mic is tried first whatever the setting says: during a real call Android silences a normal app's mic.
+        val why = VoiceService.startClassicLive(this, if (Settings.hd16k) 16000 else 8000, true, Settings.rawMic)
         say(if (why.isNotEmpty()) why else "Starting live call audio… the call must already be connected.")
     }
 
@@ -204,9 +205,7 @@ class ClassicActivity : Activity() {
             btnTest.isEnabled = !running || mode == "classic_test"
             status.text = when {
                 VoiceService.rvcRunning -> "RVC is running. Stop it before using the classic voice changer."
-                running && mode == "classic" ->
-                    "Live call audio is running: ${ClassicPresets.label()}." +
-                        LiveVoice.micMode.let { if (it.isEmpty()) "" else "\nmic: $it" }
+                running && mode == "classic" -> liveStatus()
                 running && mode == "classic_test" -> "Headphone test is running: ${ClassicPresets.label()}. Use headphones to avoid feedback."
                 !running && VoiceService.lastError.isNotEmpty() -> "Audio error: ${VoiceService.lastError}"
                 else -> note
@@ -214,6 +213,23 @@ class ClassicActivity : Activity() {
             ui.postDelayed(this, 300)
         }
     }
+
+    /** Live status with a mic / call level readout, so a silent mic is obvious. */
+    private fun liveStatus(): String {
+        val i = LiveVoice.inPeak; val o = LiveVoice.outPeak
+        LiveVoice.inPeak = 0; LiveVoice.outPeak = 0
+        shownIn = maxOf(i, shownIn * 3 / 4); shownOut = maxOf(o, shownOut * 3 / 4)   // slow fall-off so it is readable
+        return buildString {
+            append("Live call audio is running: ${ClassicPresets.label()}.")
+            if (LiveVoice.micMode.isNotEmpty()) append("\nmic: ${LiveVoice.micMode}")
+            append("\nlevels: mic in %d%% -> call out %d%%".format(shownIn * 100 / 32768, shownOut * 100 / 32768))
+            if (shownIn < 40) append("\nThe microphone looks silent.")
+            if (LiveVoice.micNote.isNotEmpty()) append("\n${LiveVoice.micNote}")
+        }
+    }
+
+    private var shownIn = 0
+    private var shownOut = 0
 
     override fun onDestroy() {
         ui.removeCallbacks(poll)

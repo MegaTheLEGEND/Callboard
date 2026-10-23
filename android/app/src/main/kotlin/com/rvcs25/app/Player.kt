@@ -25,6 +25,8 @@ object Player {
     @Volatile var note = ""; private set
     @Volatile var lastPlayAt = 0L; private set
     @Volatile var lastEndAt = 0L; private set
+    /** When on, the clip you tap repeats until you press Stop or tap another pad. Not saved: it never starts the app looping. */
+    @Volatile var loop = false
 
     private val lock = Any()
     @Volatile private var gen = 0
@@ -80,8 +82,12 @@ object Player {
     private fun run(ctx: Context, s: Sound, my: Int) {
         try {
             note = ""
-            try { sendToCall(ctx, s, my) } catch (t: Throwable) { note = "Couldn't send to the call: ${t.message}" }
-            if (gen == my) playLocal(ctx, s, my)
+            do {
+                val t0 = SystemClock.elapsedRealtime()
+                try { sendToCall(ctx, s, my) } catch (t: Throwable) { note = "Couldn't send to the call: ${t.message}" }
+                if (gen == my) playLocal(ctx, s, my)
+                // Switching Loop off lets the current play-through finish; a pass that ended instantly never spins.
+            } while (loop && gen == my && SystemClock.elapsedRealtime() - t0 > 200)
         } finally {
             synchronized(lock) { if (gen == my) playingId = null }
             lastEndAt = System.currentTimeMillis()
