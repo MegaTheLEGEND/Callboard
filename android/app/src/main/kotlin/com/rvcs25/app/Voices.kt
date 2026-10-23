@@ -150,13 +150,14 @@ object Voices {
     /** Gets whatever this voice type needs (HuBERT for its version, FCPE, its synth template): from the models baked
      *  into the APK if present, otherwise from the GitHub release. Already-present files are never touched. */
     private fun ensureBase(ver: String, key: String, say: (String) -> Unit) {
-        val hasDn = runCatching { JSONObject(app.assets.open("base/manifest.json").bufferedReader().use { it.readText() }).has("denoiser_model.onnx") }.getOrDefault(false)
-        val need = listOfNotNull("denoiser_model.onnx".takeIf { hasDn }) + listOf("hubert_$ver.onnx", "fcpe_mel.onnx", "fcpe_net.onnx", "fcpe_cents.f32", "templates/$key/synth.onnx",
+        val bundled = runCatching { JSONObject(app.assets.open("base/manifest.json").bufferedReader().use { it.readText() }) }.getOrNull()
+        // Slim build (nothing baked in): also try to fetch the denoiser; it is skipped quietly if the release has none.
+        val wantDn = bundled == null || bundled.has("denoiser_model.onnx")
+        val need = listOfNotNull("denoiser_model.onnx".takeIf { wantDn }) + listOf("hubert_$ver.onnx", "fcpe_mel.onnx", "fcpe_net.onnx", "fcpe_cents.f32", "templates/$key/synth.onnx",
             "templates/$key/template.params", "templates/$key/template.config", "templates/$key/template.cfg")
         base.mkdirs()
         val local = baseManifest()
         if (need.all { File(base, it).exists() && local.has(it) }) return
-        val bundled = runCatching { JSONObject(app.assets.open("base/manifest.json").bufferedReader().use { it.readText() }) }.getOrNull()
         var remote: JSONObject? = null; var url = ""
         for (rel in need) {
             val dest = File(base, rel)
@@ -178,7 +179,7 @@ object Voices {
                     remote = JSONObject(String(fetchBytes(url + "manifest.json")))
                 }
                 val e = remote.optJSONObject(rel)
-                    ?: throw Exception("This build has no $rel. Re-run the “Build base models + APK” workflow with variant $key.")
+                    ?: if (rel == "denoiser_model.onnx") continue else throw Exception("This build has no $rel. Re-run the “Build base models + APK” workflow with variant $key.")
                 fetchFile(url + e.getString("asset"), dest, e.getString("sha256")) { say("Downloading base model $rel… $it") }
                 local.put(rel, e); saveManifest(local)
             }

@@ -15,7 +15,7 @@ import dev.callboard.rvc.NativeBridge
  * Foreground service that owns the audio session. Two modes:
  *  - "test": Oboe mic -> voice engine -> Oboe speaker (headphones)
  *  - "live": mic -> voice engine -> phone-call uplink through the Shizuku helper ([LiveVoice])
- * MainActivity drives it through [start] / [startLive] / [stop] and reads [running] / [mode] / [lastError].
+ * RvcActivity drives it through [start] / [startLive] / [stop] and reads [running] / [mode] / [lastError].
  */
 class VoiceService : Service() {
     override fun onBind(i: Intent?): IBinder? = null
@@ -37,7 +37,7 @@ class VoiceService : Service() {
         val live = intent?.getStringExtra(EXTRA_MODE) == "live"
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Voice", NotificationManager.IMPORTANCE_LOW))
-        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val open = PendingIntent.getActivity(this, 0, Intent(this, RvcActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val n = Notification.Builder(this, CHANNEL)
             .setContentTitle(if (live) "RVC live call active" else "RVC voice active")
             .setContentText("Tap to open")

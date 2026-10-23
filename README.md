@@ -1,3 +1,18 @@
+# Callboard
+
+**Callboard** is a call soundboard: a dark button matrix. Add MP3s (or any audio), tap a pad, and the clip plays **into the
+phone call** (the other person hears it) **and on your loudspeaker** at the same time. The RVC voice changer below is still
+here, but it is now secondary: open it from the **Voice changer ›** button on the home screen.
+
+- **Add sound** (the dashed pad) opens the file picker; pick several at once. Clips are decoded once and stored in the app.
+- **Long-press** a pad to rename, change colour, reorder or delete it. **STOP** ends whatever is playing.
+- **Speaker: ON/OFF** turns the loudspeaker copy on or off. **Level in call** sets how loud clips are for the other person.
+- The chips at the top show whether the Shizuku helper is ready (tap it to connect) and whether you are on a call.
+  Playing into a call needs the Shizuku helper and a connected call; otherwise the clip plays on the speaker only and the app says why.
+- If the voice changer is running live, soundboard clips are mixed into it, so the two never cut each other off.
+
+---
+
 # RVC S25 — realtime voice conversion on the Galaxy S25 Ultra (Snapdragon 8 Elite NPU)
 
 A single-voice, static-shape port of [RVC](https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI)
@@ -70,6 +85,12 @@ change needs an uninstall (the old builds used a different, random key). Debug a
 The keystore is committed on purpose (personal sideload app; password `rvcs25app`, alias `rvcs25`). If the repo is public and you
 don't want others to be able to sign "updates" for your install, replace it with your own key via the optional secrets
 `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` (and use that key for every build from then on).
+**Slim APK (no baked models).** Actions tab → *Build slim APK (no baked models)* → Run workflow. It only compiles the app, with no
+model export, so it finishes in minutes and the APK is small. The soundboard works straight away; the voice changer downloads the base
+models on first use from your latest *full* release, so run *Build base models + APK* at least once. Slim and full builds share the signing
+key and install over each other. The optional "publish release" box makes a release that is never marked *latest*, so model downloads keep
+pointing at your full release.
+
 Prefer doing it by hand? `python export/build_base.py --hubert-dir assets/hubert_base --out base/` and
 `adb push base /sdcard/Android/data/com.rvcs25.app/files/base` works too (variants: `--variants v2_48000 ...`, `--from-pth model.pth`).
 The script self-tests each template (random weights injected by name must reproduce PyTorch).

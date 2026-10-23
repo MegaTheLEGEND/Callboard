@@ -26,6 +26,26 @@ object LiveVoice {
     @Volatile var keepUnmuted = false
     /** 0 = automatic (raw switch picks UNPROCESSED/MIC), otherwise a MediaRecorder.AudioSource id for the helper mic. */
     @Volatile var micSource = 0
+    /** Uplink rate (8000 / 16000) of the running live session; soundboard clips are converted to this. */
+    @Volatile var rate = 8000; private set
+
+    private val mixLock = Any()
+    private var mixData: ShortArray? = null
+    private var mixPos = 0
+
+    /** Soundboard: adds [clip] (already at [rate], mono) on top of the live voice. Replaces a clip still playing. */
+    fun mixClip(clip: ShortArray) { synchronized(mixLock) { mixData = clip; mixPos = 0 } }
+    fun clearMix() { synchronized(mixLock) { mixData = null; mixPos = 0 } }
+
+    private fun mixInto(buf: ShortArray, n: Int) {
+        synchronized(mixLock) {
+            val c = mixData ?: return
+            val len = minOf(n, c.size - mixPos)
+            for (i in 0 until len) buf[i] = (buf[i] + c[mixPos + i]).coerceIn(-32768, 32767).toShort()
+            mixPos += len
+            if (mixPos >= c.size) mixData = null
+        }
+    }
 
     private var upOut: OutputStream? = null
     private var micIn: InputStream? = null
@@ -37,6 +57,8 @@ object LiveVoice {
     @Synchronized
     fun start(ctx: Context, slackMs: Int, rate: Int, shellMic: Boolean, unprocessed: Boolean, inputDevice: Int = 0): String {
         stop()
+        this.rate = rate
+        clearMix()
         appCtx = ctx.applicationContext
         val svc: IShell = RvcApp.link.service ?: return "Shizuku helper not connected (start Shizuku, tap Grant Shizuku)"
         var err = NativeBridge.nativeStartLive(slackMs, rate)
@@ -83,6 +105,7 @@ object LiveVoice {
     private fun teardown() {
         active = false
         micMode = ""
+        clearMix()
         val svc = RvcApp.link.service
         runCatching { svc?.stopMic() }
         runCatching { svc?.endStream() }
@@ -144,6 +167,7 @@ object LiveVoice {
         try {
             while (active) {
                 NativeBridge.nativePullUplink(shorts, n)
+                mixInto(shorts, n)
                 for (i in 0 until n) {
                     val s = shorts[i].toInt()
                     bytes[2 * i] = s.toByte()

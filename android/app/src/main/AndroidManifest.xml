@@ -36,6 +36,9 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".RvcActivity" android:exported="false"
+            android:screenOrientation="portrait" />
+
         <activity android:name=".SettingsActivity" android:exported="false"
             android:screenOrientation="portrait" />
 
