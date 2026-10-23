@@ -50,6 +50,16 @@ object Settings {
     /** MediaRecorder.AudioSource id for the helper mic; 0 = Auto. */
     var micSource by IntPref("micSource", 0, 0, 9)
 
+    /** Show a floating shortcut to this app over the dialer while a call is active. */
+    var callShortcut by BoolPref("callShortcut", false)
+    /** Where the shortcut was dragged to (screen pixels, top-left); -1 = default spot. */
+    /** Keep the shortcut where it is (dragging it does nothing). */
+    var shortcutLock by BoolPref("shortcutLock", false)
+    /** Shortcut button size in dp. */
+    var shortcutSize by IntPref("shortcutSize", 52, 32, 96)
+    var shortcutX by IntPref("shortcutX", -1, -1, 20000)
+    var shortcutY by IntPref("shortcutY", -1, -1, 20000)
+
     // ---- voice ---------------------------------------------------------------------------------
     /** Semitones, -12..+12. */
     var pitch by IntPref("pitch", 0, -12, 12)

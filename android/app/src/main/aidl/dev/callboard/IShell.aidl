@@ -60,4 +60,10 @@ interface IShell {
 
     /** Hangs up the active call (Telecom, falling back to the hardware End key). Returns true if a hang-up was issued. */
     boolean endCall() = 14;
+
+    /**
+     * Package name of the app that has the screen right now (parsed from dumpsys as the shell user), or "" if it
+     * could not be read. Used to show the in-call shortcut only while the dialer is on screen.
+     */
+    String foregroundPackage() = 15;
 }

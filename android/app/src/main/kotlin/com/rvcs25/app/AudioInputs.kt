@@ -137,6 +137,12 @@ object AudioInputs {
             it.type in VIA_COMM && it.address.equals(addr, true)
         }?.id ?: 0
 
+    /** Input id of the active Bluetooth device right now (0 if it still has no input). Safe to call after [activate]. */
+    fun activeInputId(ctx: Context): Int {
+        val d = selected(ctx) ?: return 0
+        return if (d.viaComm) inputIdFor(ctx, d.address) else d.id
+    }
+
     /** Opens the hands-free (SCO) link to a paired headset / watch directly. True if the request was accepted. */
     @Suppress("MissingPermission")
     private fun startHfp(ctx: Context, d: Dev): Boolean {

@@ -237,8 +237,12 @@ internal class AppMic(
         val frame = 960
         val min = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (min <= 0) return "mic buffer size $min"
-        val sources = if (unprocessed) listOf(MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.MIC)
-        else listOf(MediaRecorder.AudioSource.MIC)
+        // A Bluetooth mic only carries audio through the call link, so ask for the communication source first.
+        val sources = when {
+            AudioInputs.viaComm -> listOf(MediaRecorder.AudioSource.VOICE_COMMUNICATION, MediaRecorder.AudioSource.MIC)
+            unprocessed -> listOf(MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.MIC)
+            else -> listOf(MediaRecorder.AudioSource.MIC)
+        }
         var r: AudioRecord? = null
         var why = ""
         for (src in sources) {
@@ -253,9 +257,11 @@ internal class AppMic(
             } catch (t: Throwable) { why = t.message ?: "mic error" }
         }
         val rc = r ?: return "mic not available${if (why.isEmpty()) "" else ": $why"}"
-        if (device != 0) {
+        // The Bluetooth input can show up a moment after the link opens, so look it up again if activate() had no id.
+        val devId = if (device != 0) device else if (AudioInputs.viaComm) AudioInputs.activeInputId(ctx) else 0
+        if (devId != 0) {
             ctx.getSystemService(AudioManager::class.java).getDevices(AudioManager.GET_DEVICES_INPUTS)
-                .firstOrNull { it.id == device }?.let { rc.setPreferredDevice(it) }
+                .firstOrNull { it.id == devId }?.let { rc.setPreferredDevice(it) }
         }
         try { rc.startRecording() } catch (t: Throwable) { rc.release(); return "mic start failed: ${t.message}" }
         if (rc.recordingState != AudioRecord.RECORDSTATE_RECORDING) { rc.release(); return "mic did not start" }

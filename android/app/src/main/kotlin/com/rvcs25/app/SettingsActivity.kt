@@ -2,7 +2,9 @@ package com.rvcs25.app
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
 import android.graphics.Typeface
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
@@ -12,6 +14,7 @@ import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
+import dev.callboard.ShizukuLink
 
 /**
  * All options in one place, grouped and explained. Every change is saved immediately
@@ -24,6 +27,7 @@ class SettingsActivity : Activity() {
     private var pathValue: TextView? = null
     private var micDevRow: View? = null
     private var micDevValue: TextView? = null
+    private var shortcutNote: TextView? = null
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private val dim = 0xFF9AA0A6.toInt()
@@ -83,6 +87,30 @@ class SettingsActivity : Activity() {
                 "turn this off: some phones also silence mic capture when the call is muted.",
             Settings.muteOnLive,
         ) { Settings.muteOnLive = it }
+
+        toggle(
+            "Show app shortcut during calls",
+            "A small floating button with this app’s icon appears while the dialer is on screen during a call. Tap it to jump back " +
+                "here (the voice changer screen if one is running); drag it to move it. Needs “Display over other apps”.",
+            Settings.callShortcut,
+        ) { on ->
+            Settings.callShortcut = on
+            if (on && !canOverlay()) askOverlay()
+            CallShortcutService.sync(this)
+            refreshShortcutNote()
+        }
+        shortcutNote = note("").also { root.addView(it) }
+        refreshShortcutNote()
+        toggle(
+            "Lock shortcut position",
+            "Stops the button from being dragged, so it can’t be moved by accident while you tap it. Turn it off to move it again.",
+            Settings.shortcutLock,
+        ) { Settings.shortcutLock = it }
+        slider(
+            max = 64, init = Settings.shortcutSize - 32,
+            label = { "Shortcut size: ${it + 32} dp" },
+            help = "Changes the button while it is showing, within a second.",
+        ) { Settings.shortcutSize = it + 32 }
 
         micRow = choice(
             "Helper mic source",
@@ -282,7 +310,34 @@ class SettingsActivity : Activity() {
         }
     }
 
-    override fun onResume() { super.onResume(); micDevValue?.text = currentDeviceName() }
+    override fun onResume() {
+        super.onResume()
+        micDevValue?.text = currentDeviceName()
+        CallShortcutService.sync(this)       // picks up the overlay permission if it was just granted
+        refreshShortcutNote()
+    }
+
+    private fun canOverlay() = android.provider.Settings.canDrawOverlays(this)
+
+    private fun askOverlay() {
+        android.widget.Toast.makeText(this, "Allow “Display over other apps” for this app, then come back.", android.widget.Toast.LENGTH_LONG).show()
+        runCatching {
+            startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        }
+    }
+
+    private fun refreshShortcutNote() {
+        val n = shortcutNote ?: return
+        n.setOnClickListener(null)
+        n.text = when {
+            !Settings.callShortcut -> ""
+            !canOverlay() -> "Needs “Display over other apps”. Tap here to allow it."
+            RvcApp.link.state != ShizukuLink.State.CONNECTED ->
+                "Shizuku helper not connected: the button will show during the whole call, not only over the dialer."
+            else -> "On: the button shows over the dialer while a call is active."
+        }
+        if (Settings.callShortcut && !canOverlay()) n.setOnClickListener { askOverlay() }
+    }
 
     /** The mic-source row only matters while helper capture is on. */
     private fun refreshMicRow() {

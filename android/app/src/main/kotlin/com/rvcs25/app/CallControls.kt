@@ -28,4 +28,22 @@ internal object CallControls {
             p.waitFor(5, TimeUnit.SECONDS) && p.exitValue() == 0
         }.getOrDefault(false)
     }
+
+    private val PKG = Regex("""\bu\d+\s+([A-Za-z0-9_.]+)/""")
+
+    private fun sh(cmd: String): String = runCatching {
+        val p = ProcessBuilder("sh", "-c", cmd).redirectErrorStream(true).start()
+        val out = p.inputStream.bufferedReader().readText()   // grep -m1 exits after the first hit, so this returns fast
+        if (!p.waitFor(2, TimeUnit.SECONDS)) p.destroy()
+        out
+    }.getOrDefault("")
+
+    /** The package on screen right now, or "". Tries the resumed activity first, then the focused window. */
+    fun foregroundPackage(): String {
+        for (cmd in listOf(
+            "dumpsys activity activities | grep -m1 topResumedActivity",
+            "dumpsys window | grep -m1 mCurrentFocus",
+        )) PKG.find(sh(cmd))?.let { return it.groupValues[1] }
+        return ""
+    }
 }

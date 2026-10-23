@@ -182,8 +182,9 @@ class ClassicActivity : Activity() {
         LiveVoice.method = Settings.method
         LiveVoice.micSource = Settings.micSource
         LiveVoice.keepUnmuted = Settings.keepUnmuted
-        // The helper mic is tried first whatever the setting says: during a real call Android silences a normal app's mic.
-        val why = VoiceService.startClassicLive(this, if (Settings.hd16k) 16000 else 8000, true, Settings.rawMic)
+        // Same rule as RVC: the helper (Shizuku) mic is only used when the setting is on. With a Bluetooth / external
+        // mic chosen, Android silences every phone mic during the call, so the app must capture from that device.
+        val why = VoiceService.startClassicLive(this, if (Settings.hd16k) 16000 else 8000, Settings.shellMic, Settings.rawMic)
         say(if (why.isNotEmpty()) why else "Starting live call audio… the call must already be connected.")
     }
 

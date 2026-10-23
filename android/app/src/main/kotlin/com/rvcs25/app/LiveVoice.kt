@@ -107,7 +107,9 @@ object LiveVoice {
             var shellOk = false
             // The mic reader threads check [active], so it must already be true when they start (else they quit at once).
             active = true
-            if (shellMic && inputDevice == 0) {
+            // A chosen Bluetooth (SCO / LE / hearing aid) mic must never go through the helper: it can't pick a device.
+            val wantsDevice = inputDevice != 0 || AudioInputs.viaComm || Settings.micDeviceKey.isNotEmpty()
+            if (shellMic && !wantsDevice) {
                 shellOk = startShellMic(svc, unprocessed)
                 if (!shellOk) micNote = (micNote.ifEmpty { "helper mic unavailable" }) +
                     "; using the app mic, which Android may silence during a call"

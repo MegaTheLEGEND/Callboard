@@ -93,6 +93,7 @@ class MainActivity : Activity() {
     // ------------------------------------------------------------------ screen
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        CallShortcutService.sync(this)     // (re)start the in-call shortcut if the setting is on
         window.setBackgroundDrawable(ColorDrawable(Cb.BG))
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Cb.BG) }
         root.setOnApplyWindowInsetsListener { v, insets ->

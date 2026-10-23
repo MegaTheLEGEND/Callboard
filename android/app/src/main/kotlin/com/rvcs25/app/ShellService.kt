@@ -142,6 +142,11 @@ class ShellService(context: Context) : IShell.Stub() {
         return onPlainThread(8000) { CallControls.endCall(ctx) } ?: false
     }
 
+    override fun foregroundPackage(): String {
+        enforceCaller()
+        return onPlainThread(3500) { CallControls.foregroundPackage() } ?: ""
+    }
+
     override fun status(): String {
         enforceCaller()
         val token = Binder.clearCallingIdentity()
