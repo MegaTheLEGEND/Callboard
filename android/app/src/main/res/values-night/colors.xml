@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Launcher icon, dark theme: near-black tile, lighter bubble with a faint rim -->
+    <color name="cb_icon_bg">#0B0D12</color>
+    <color name="cb_icon_bubble">#232B45</color>
+    <color name="cb_icon_stroke">#24FFFFFF</color>
+</resources>

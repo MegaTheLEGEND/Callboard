@@ -133,12 +133,8 @@ class ShellService(context: Context) : IShell.Stub() {
 
     override fun setMicMuted(on: Boolean): Boolean {
         enforceCaller()
+        if (injector.userMute(on)) return true   // a clip / the voice is playing: apply the mute when it ends
         return onPlainThread { CallControls.setMuted(ctx, on) } ?: false
-    }
-
-    override fun setSpeakerphone(on: Boolean): Boolean {
-        enforceCaller()
-        return onPlainThread { CallControls.setSpeaker(ctx, on) } ?: false
     }
 
     override fun endCall(): Boolean {

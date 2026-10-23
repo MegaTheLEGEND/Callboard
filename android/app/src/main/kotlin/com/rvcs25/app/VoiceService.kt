@@ -41,7 +41,7 @@ class VoiceService : Service() {
         val n = Notification.Builder(this, CHANNEL)
             .setContentTitle(if (live) "RVC live call active" else "RVC voice active")
             .setContentText("Tap to open")
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setSmallIcon(R.drawable.ic_stat_callboard)
             .setContentIntent(open).setOngoing(true).build()
         startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
 

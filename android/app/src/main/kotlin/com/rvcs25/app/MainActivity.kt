@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.text.InputType
 import android.text.Spannable
 import android.text.SpannableString
@@ -22,6 +23,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -30,8 +32,8 @@ import android.widget.Toast
 import dev.callboard.ShizukuLink
 
 /**
- * Callboard home screen: a dark button matrix. Tap a pad and the clip plays into the phone call AND on this phone.
- * The bottom bar has Stop (the clip), Mute and Speaker (both follow the dialer) and End (hang up).
+ * CallBoard home screen: a dark button matrix. Tap a pad and the clip plays into the phone call AND on this phone.
+ * The bottom bar has Stop (the clip), Mute (follows the dialer) and End (hang up).
  * Long-press a pad to rename / recolour / reorder / delete it. The voice changer (RVC) lives behind the
  * "Voice changer" button and is secondary.
  */
@@ -47,9 +49,9 @@ class MainActivity : Activity() {
     private lateinit var helperChip: TextView
     private lateinit var callChip: TextView
     private lateinit var noteView: TextView
+    private lateinit var rvcPill: TextView
     private lateinit var stopBtn: TextView
     private lateinit var muteBtn: TextView
-    private lateinit var speakerBtn: TextView
     private lateinit var endBtn: TextView
     private lateinit var levelVal: TextView
 
@@ -58,6 +60,8 @@ class MainActivity : Activity() {
     @Volatile private var flashMsg = ""
     @Volatile private var flashAt = 0L
     private var shownMuted = false
+    private var muteTouchedAt = 0L
+    private var rvcShownOn: Boolean? = null
     private var tick = 0
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -99,14 +103,17 @@ class MainActivity : Activity() {
         // ---- header
         val header = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(14), dp(20), dp(6)) }
         val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        titleRow.addView(ImageView(this).apply { setImageResource(R.drawable.ic_callboard_mark) },
+            LinearLayout.LayoutParams(dp(40), dp(40)).apply { rightMargin = dp(10) })
         titleRow.addView(TextView(this).apply {
-            text = SpannableString("callboard").apply {
+            text = SpannableString("CallBoard").apply {
                 setSpan(ForegroundColorSpan(Cb.ACCENT), 4, 9, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             textSize = 30f; setTextColor(Cb.TEXT); letterSpacing = -0.02f
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        titleRow.addView(pill("Voice changer ›", Cb.MUTED) { startActivity(Intent(this, RvcActivity::class.java)) })
+        rvcPill = pill("●  Voice changer ›", Cb.MUTED) { startActivity(Intent(this, RvcActivity::class.java)) }
+        titleRow.addView(rvcPill)
         header.addView(titleRow)
 
         val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(12), 0, 0) }
@@ -130,7 +137,7 @@ class MainActivity : Activity() {
         root.addView(ScrollView(this).apply { isVerticalScrollBarEnabled = false; addView(grid) },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
-        // ---- bottom bar: stop clip, mute, speaker, end call, then the level slider
+        // ---- bottom bar: stop clip, mute, end call, then the level slider
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(14), dp(18), dp(14))
             val r = dp(24).toFloat()
@@ -139,9 +146,8 @@ class MainActivity : Activity() {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         stopBtn = barButton("■ STOP") { Player.stop() }
         muteBtn = barButton("Mute") { toggleMute() }
-        speakerBtn = barButton("Speaker") { toggleSpeaker() }
         endBtn = barButton("End") { hangUp() }
-        for ((i, v) in listOf(stopBtn, muteBtn, speakerBtn, endBtn).withIndex()) {
+        for ((i, v) in listOf(stopBtn, muteBtn, endBtn).withIndex()) {
             row.addView(v, LinearLayout.LayoutParams(0, dp(48), if (i == 0) 1.15f else 1f).apply { if (i > 0) leftMargin = dp(8) })
         }
         bar.addView(row)
@@ -195,21 +201,13 @@ class MainActivity : Activity() {
     private fun toggleMute() {
         if (!Player.inCall(this)) { flash("No call to mute."); return }
         val svc = RvcApp.link.service ?: run { flash("Connect the Shizuku helper first (tap its chip)."); return }
-        val want = !Player.micMuted(this)
+        // Go by what the button shows: while a clip plays the helper holds the system flag clear, so it can't be read then.
+        val want = !shownMuted
         shownMuted = want
+        muteTouchedAt = SystemClock.elapsedRealtime()
         Thread {
             val ok = runCatching { svc.setMicMuted(want) }.getOrDefault(false)
             if (!ok) flash("Couldn't change mute.")
-        }.start()
-    }
-
-    private fun toggleSpeaker() {
-        if (!Player.inCall(this)) { flash("No call to switch."); return }
-        val svc = RvcApp.link.service ?: run { flash("Connect the Shizuku helper first (tap its chip)."); return }
-        val want = !Player.speakerphoneOn(this)
-        Thread {
-            val ok = runCatching { svc.setSpeakerphone(want) }.getOrDefault(false)
-            if (!ok) flash("Android wouldn't let Callboard switch the call route. Use the dialer's speaker button; this button still follows it.")
         }.start()
     }
 
@@ -403,17 +401,28 @@ class MainActivity : Activity() {
                 ShizukuLink.State.PERMISSION_DENIED -> setChip(helperChip, Cb.DANGER, "Shizuku denied · tap to retry")
                 ShizukuLink.State.ERROR -> setChip(helperChip, Cb.DANGER, "Helper error · tap to retry")
             }
+            // Dot on the Voice changer button: green while the voice changer is running, grey otherwise.
+            val rvcOn = VoiceService.running
+            if (rvcOn != rvcShownOn) {
+                rvcShownOn = rvcOn
+                val sp = SpannableString("●  Voice changer ›")
+                sp.setSpan(ForegroundColorSpan(if (rvcOn) Cb.ACCENT else Cb.MUTED), 0, 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                rvcPill.text = sp
+            }
+
             val inCall = Player.inCall(this@MainActivity)
             if (inCall) setChip(callChip, Cb.ACCENT, "On a call") else setChip(callChip, Cb.MUTED, "No call")
 
             // Mute / speaker follow the dialer (read from the system), a few times a second.
             if (tick++ % 2 == 0) {
-                // While a clip plays the helper lifts your mute so the clip is heard, so keep showing the real state.
-                if (Player.playingId == null) shownMuted = inCall && Player.micMuted(this@MainActivity)
-                val spk = inCall && Player.speakerphoneOn(this@MainActivity)
+                // Only if "keep un-muted" is on does the helper lift the system mute flag while a clip plays (and put it
+                // back after); then the flag can't be read, so keep showing what you chose.
+                val busy = (Settings.keepUnmuted &&
+                    (Player.playingId != null || System.currentTimeMillis() - Player.lastEndAt < 1500)) ||
+                    SystemClock.elapsedRealtime() - muteTouchedAt < 700
+                if (!busy) shownMuted = inCall && Player.micMuted(this@MainActivity)
                 muteBtn.text = if (shownMuted) "Muted" else "Mute"
                 styleBtn(muteBtn, Cb.WARN, shownMuted, !inCall)
-                styleBtn(speakerBtn, Cb.ACCENT, spk, !inCall)
                 styleBtn(stopBtn, Cb.TEXT, false)
                 styleBtn(endBtn, Cb.DANGER, true, !inCall)
             }

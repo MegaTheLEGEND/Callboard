@@ -21,7 +21,7 @@ import dev.callboard.rvc.NativeBridge
 import java.io.File
 
 /**
- * Voice changer (RVC) control panel, opened from Callboard's home screen ("Voice changer"). Secondary to the
+ * Voice changer (RVC) control panel, opened from CallBoard's home screen ("Voice changer"). Secondary to the
  * soundboard. UI is built in code to keep the project dependency-free.
  *
  * Model pack location (push it with adb, see README):
@@ -44,10 +44,19 @@ class RvcActivity : Activity() {
     private lateinit var lblPitch: TextView
     private lateinit var lblIndex: TextView
 
-    private var loaded = false
-    private var loading = false
-    private var loadedSig = ""
-    private var loadedVoice = ""
+    // Kept in RvcSession (not here) so they survive leaving this screen: the engine keeps running without it.
+    private var loaded: Boolean
+        get() = RvcSession.loaded
+        set(v) { RvcSession.loaded = v }
+    private var loading: Boolean
+        get() = RvcSession.loading
+        set(v) { RvcSession.loading = v }
+    private var loadedSig: String
+        get() = RvcSession.loadedSig
+        set(v) { RvcSession.loadedSig = v }
+    private var loadedVoice: String
+        get() = RvcSession.loadedVoice
+        set(v) { RvcSession.loadedVoice = v }
     private lateinit var voiceLbl: TextView
 
     private val packDir get() = Voices.active()?.dir ?: File(getExternalFilesDir(null), "pack")
@@ -77,7 +86,7 @@ class RvcActivity : Activity() {
             setPadding(dp(18), dp(40), dp(18), dp(24))
         }
         root.addView(TextView(this).apply {
-            text = "‹ Callboard"; textSize = 15f; setTextColor(Cb.ACCENT); setPadding(0, 0, 0, dp(8))
+            text = "‹ CallBoard"; textSize = 15f; setTextColor(Cb.ACCENT); setPadding(0, 0, 0, dp(8))
             setOnClickListener { finish() }
         })
         root.addView(LinearLayout(this).apply {
@@ -119,7 +128,7 @@ class RvcActivity : Activity() {
             addView(btnLive, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         })
         btnMon = Button(this).apply {
-            text = "Monitor mic input (RVC muted): OFF"
+            text = "Monitor mic input (RVC muted): " + if (VoiceEngine.monitorInput) "ON" else "OFF"
             setOnClickListener {
                 VoiceEngine.monitorInput = !VoiceEngine.monitorInput
                 text = "Monitor mic input (RVC muted): " + if (VoiceEngine.monitorInput) "ON" else "OFF"
@@ -146,6 +155,7 @@ class RvcActivity : Activity() {
         updateLabels()
         requestPerms()
         refreshStatus()
+        syncFromSession()
         ui.post(poll)
         ui.post(helperPoll)
     }
@@ -208,6 +218,10 @@ class RvcActivity : Activity() {
             val err = NativeBridge.nativeCreate(
                 packDir.absolutePath, ctxDir.absolutePath, applicationInfo.nativeLibraryDir, perf, strict, cpu, false,
             )
+            // Record the result in the session straight away, even if this screen was closed while loading.
+            RvcSession.loading = false
+            RvcSession.loaded = err.isEmpty()
+            if (err.isEmpty()) { RvcSession.loadedSig = sig; RvcSession.loadedVoice = vid }
             ui.post {
                 loading = false
                 loaded = err.isEmpty()
@@ -255,8 +269,29 @@ class RvcActivity : Activity() {
         LiveVoice.micSource = Settings.micSource
         LiveVoice.keepUnmuted = Settings.keepUnmuted
         VoiceService.startLive(this, Settings.slack, if (Settings.hd16k) 16000 else 8000, Settings.shellMic, Settings.rawMic)
-        status.text = "Starting live call audio… the call must already be connected." +
-            if (Settings.wifiOff && Startup.wifiOn(this)) "\nNote: Wi-Fi is on, but your settings say it should be off." else ""
+        status.text = "Starting live call audio… the call must already be connected."
+    }
+
+    /** Coming back to this screen: show the engine as it really is (loaded / loading / running), not as a fresh screen. */
+    private fun syncFromSession() {
+        btnLoad.isEnabled = !loading
+        if (loading) {
+            status.text = "Loading… the first load compiles the model for the NPU and can take a few minutes. Later loads take seconds."
+        } else if (loaded) {
+            btnRun.isEnabled = true
+            btnLive.isEnabled = true
+            status.text = when {
+                VoiceService.running && VoiceService.mode == "live" -> "Live call audio is running."
+                VoiceService.running -> "Voice changer is running."
+                else -> "Model ready."
+            }
+        }
+    }
+
+    /** What the phone reports about the call, to make a failed live start easier to read. */
+    private fun callDiag(): String {
+        val am = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+        return "[audio mode ${am.mode} (2 = phone call, 3 = app/VoIP call) · Wi-Fi ${if (Startup.wifiOn(this)) "on" else "off"}]"
     }
 
     private fun refreshStatus() {
@@ -277,7 +312,7 @@ class RvcActivity : Activity() {
                     btnLive.text = if (running && mode == "live") "Stop live" else "Start live call"
                     btnRun.isEnabled = !running || mode == "test"
                     btnLive.isEnabled = !running || mode == "live"
-                    if (VoiceService.lastError.isNotEmpty() && !running) status.text = "Audio error: ${VoiceService.lastError}"
+                    if (VoiceService.lastError.isNotEmpty() && !running) status.text = "Audio error: ${VoiceService.lastError}\n${callDiag()}"
                     if (s[16] > 0f && running) {          // headset unplugged / route changed
                         VoiceService.stop(this@RvcActivity)
                         status.text = "Audio device changed — press Start again."

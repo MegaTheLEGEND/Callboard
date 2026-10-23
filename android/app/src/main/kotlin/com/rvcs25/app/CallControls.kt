@@ -1,7 +1,6 @@
 package dev.callboard.shell
 
 import android.content.Context
-import android.media.AudioDeviceInfo
 import android.os.SystemClock
 import android.telecom.TelecomManager
 import java.util.concurrent.TimeUnit
@@ -18,23 +17,6 @@ internal object CallControls {
         val am = ShellEnv.audioManager(ctx)
         am.setMicrophoneMute(on)
         return settled { am.isMicrophoneMute == on }
-    }
-
-    @Suppress("DEPRECATION")
-    fun setSpeaker(ctx: Context, on: Boolean): Boolean {
-        val am = ShellEnv.audioManager(ctx)
-        fun isOn() = am.isSpeakerphoneOn || am.communicationDevice?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
-        if (isOn() == on) return true
-        // 1) the classic switch
-        runCatching { am.setSpeakerphoneOn(on) }
-        if (settled { isOn() == on }) return true
-        // 2) Android 12+ communication device
-        runCatching {
-            val type = if (on) AudioDeviceInfo.TYPE_BUILTIN_SPEAKER else AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
-            val d = am.availableCommunicationDevices.firstOrNull { it.type == type }
-            if (d != null) am.setCommunicationDevice(d) else if (!on) am.clearCommunicationDevice()
-        }
-        return settled { isOn() == on }
     }
 
     fun endCall(ctx: Context): Boolean {

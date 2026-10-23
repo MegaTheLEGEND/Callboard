@@ -24,6 +24,7 @@ object Player {
     /** Short explanation of what the last tap did when it could not do everything (shown on the board). */
     @Volatile var note = ""; private set
     @Volatile var lastPlayAt = 0L; private set
+    @Volatile var lastEndAt = 0L; private set
 
     private val lock = Any()
     @Volatile private var gen = 0
@@ -83,6 +84,7 @@ object Player {
             if (gen == my) playLocal(ctx, s, my)
         } finally {
             synchronized(lock) { if (gen == my) playingId = null }
+            lastEndAt = System.currentTimeMillis()
         }
     }
 
@@ -97,9 +99,9 @@ object Player {
         if (svc == null) { note = "Shizuku helper not connected, so this only played on this phone."; return }
         val rate = if (Settings.hd16k) 16000 else 8000
         svc.setMethod(Settings.method)
-        // Clips must still be heard when you have muted your own voice in the dialer; the far end only hears the
-        // clip while it plays (not your mic), and the helper puts your mute back when the clip ends.
-        svc.setKeepUnmuted(true)
+        // Follow the user's "keep un-muted" setting (off by default): injection normally works while the call is muted,
+        // and leaving the mute flag alone keeps Mute and the dialer in step.
+        svc.setKeepUnmuted(Settings.keepUnmuted)
         if (s.durationMs <= WHOLE_CLIP_MAX_MS) sendWhole(svc, s, rate, level) else sendStream(svc, s, rate, level, my)
     }
 

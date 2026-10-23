@@ -1,19 +1,22 @@
-# Callboard
+# CallBoard
 
-**Callboard** is a call soundboard: a dark button matrix. Add MP3s (or any audio), tap a pad, and the clip plays **into the
+**CallBoard** is a call soundboard: a dark button matrix. Add MP3s (or any audio), tap a pad, and the clip plays **into the
 phone call** (the other person hears it) **and on your loudspeaker** at the same time. The RVC voice changer below is still
-here, but it is now secondary: open it from the **Voice changer ›** button on the home screen.
+here, but it is now secondary: open it from the **Voice changer ›** button on the home screen (its dot is green while the voice
+changer is running, grey when it is not; the screen shows the true state when you come back to it).
 
 - **Add sound** (the dashed pad) opens the file picker; pick several at once. Clips can be up to 60 minutes long. They are decoded
   once and streamed from storage, so length does not affect memory (about 8.6 MB of storage per minute).
 - **Long-press** a pad to rename, change colour, reorder or delete it.
-- **Bottom bar:** **STOP** ends the clip that is playing. **Mute** and **Speaker** follow the dialer (they light up when the call is
-  muted / on speakerphone) and can also switch them. **End** hangs up. They are dimmed when there is no call. **Level in call** sets
-  how loud clips are for the other person.
-- Clips still play when you have muted yourself: while a clip plays, the far end hears the clip instead of your mic, and your mute is
-  put back when it ends. On this phone, clips follow the call route (loudspeaker with speakerphone on, otherwise the earpiece).
-- Mute, Speaker and End go through the Shizuku helper. Android (and Samsung) may refuse to let a non-dialer app change the call route
-  or update the dialer's own mute icon; the buttons always show the real state and say so when a change didn't go through.
+- **Bottom bar:** **STOP** ends the clip that is playing. **Mute** shows the dialer's mute state (it lights up when the call is muted)
+  and can also switch it. **End** hangs up. They are dimmed when there is no call. **Level in call** sets how loud clips are for the
+  other person.
+- Clips play into the call even while you are muted (injection works with the call muted), so Mute simply mutes your own voice. If
+  your phone ever silences clips while muted, turn on "Force un-mute" in Settings: then the clip is heard and your mute is put back
+  when it ends. On this phone, clips follow the call route you set in the dialer (loudspeaker with speakerphone on, otherwise the
+  earpiece).
+- Mute and End go through the Shizuku helper. Android (and Samsung) may not update the dialer's own mute icon; the button always shows
+  the real state and says so when a change didn't go through.
 - The chips at the top show whether the Shizuku helper is ready (tap it to connect) and whether you are on a call.
   Playing into a call needs the Shizuku helper and a connected call; otherwise the clip only plays on this phone and the app says why.
 - If the voice changer is running live, soundboard clips are mixed into it, so the two never cut each other off.

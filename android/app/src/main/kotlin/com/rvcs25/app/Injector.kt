@@ -35,6 +35,19 @@ internal class Injector(private val ctx: Context) {
     /** Keep the uplink open when the call's mute button is pressed (see IShell.setKeepUnmuted). */
     @Volatile var keepUnmuted = true
 
+    @Volatile private var liveTap: Tap? = null
+
+    /**
+     * The mute button was pressed while audio is being injected. Returns true if the open tap took the wish (the mute is
+     * then applied when the tap closes); false if nothing is being injected, so the caller should set the flag itself.
+     */
+    fun userMute(on: Boolean): Boolean {
+        val t = liveTap ?: return false
+        if (!keepUnmuted) return false
+        t.setUserMute(on)
+        return true
+    }
+
     fun play(pcm: ShortArray, rate: Int) {
         synchronized(lock) {
             if (shuttingDown) return
@@ -140,6 +153,7 @@ internal class Injector(private val ctx: Context) {
                 val t = Tap(ctx, rate, method)
                 tap = t
                 t.start()
+                liveTap = t
                 status = "live: ${t.method}"
                 val frameSize = rate / 50 // 20 ms
                 val frame = ShortArray(frameSize)
@@ -211,6 +225,7 @@ internal class Injector(private val ctx: Context) {
                     if (wait > 0) SystemClock.sleep(wait / 1_000_000)
                     else if (wait < -100_000_000L) next = SystemClock.elapsedRealtimeNanos()
                 }
+                liveTap = null
                 runCatching { t.close() }
                 tap = null
                 if (switchTo == 0) break
@@ -220,6 +235,7 @@ internal class Injector(private val ctx: Context) {
             Log.w(TAG, "injector failed", t)
             synchronized(lock) { running = false; clip = null; closeStreamLocked(); status = "error: ${Tap.describe(t)}" }
         } finally {
+            liveTap = null
             tap?.let { runCatching { it.close() } }
         }
       }

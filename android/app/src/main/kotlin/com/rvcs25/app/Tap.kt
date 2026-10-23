@@ -34,12 +34,24 @@ internal class Tap(private val ctx: Context, private val rate: Int, private val 
     fun inCall() = isCellularMode(audioManager.mode)
 
     @Volatile private var forcedUnmute = false
+    /** What the mute flag should go back to when the tap closes (true = the user wants to be muted). */
+    @Volatile private var wantMuted = false
 
     fun micMuted(): Boolean = runCatching { audioManager.isMicrophoneMute }.getOrDefault(false)
 
     /** Clears the platform mic-mute flag (the call's mute button sets it). Undone in [close]. */
     fun forceUnmute() {
-        runCatching { audioManager.setMicrophoneMute(false); forcedUnmute = true }
+        runCatching { audioManager.setMicrophoneMute(false); forcedUnmute = true; wantMuted = true }
+    }
+
+    /**
+     * Mute / un-mute pressed in Callboard while audio is being injected: the flag has to stay clear so the injected audio
+     * is heard, so just remember the wish and apply it when the tap closes.
+     */
+    fun setUserMute(on: Boolean) {
+        wantMuted = on
+        forcedUnmute = true
+        runCatching { audioManager.setMicrophoneMute(false) }
     }
 
     fun start() {
@@ -98,7 +110,8 @@ internal class Tap(private val ctx: Context, private val rate: Int, private val 
         // Put the dialer's mute back so the real mic is not live while the UI still says "muted".
         if (forcedUnmute) {
             forcedUnmute = false
-            if (runCatching { inCall() }.getOrDefault(false)) runCatching { audioManager.setMicrophoneMute(true) }
+            if (wantMuted && runCatching { inCall() }.getOrDefault(false)) runCatching { audioManager.setMicrophoneMute(true) }
+            wantMuted = false
         }
         if (::record.isInitialized) { runCatching { record.stop() } }
         if (::track.isInitialized) { runCatching { track.pause(); track.flush(); track.stop() } }
