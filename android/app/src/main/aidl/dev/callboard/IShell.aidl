@@ -51,4 +51,19 @@ interface IShell {
      * Switches Wi-Fi on or off from the shell uid (`svc wifi enable|disable`). Returns true if the command succeeded.
      */
     boolean setWifiEnabled(boolean on) = 11;
+
+    /**
+     * Mutes / un-mutes the call microphone: the same platform flag the dialer's mute button sets. Returns true if the
+     * flag matches [on] afterwards.
+     */
+    boolean setMicMuted(boolean on) = 12;
+
+    /**
+     * Tries to move the call between speakerphone ([on]) and the earpiece. Android lets only the phone app own the
+     * call route on some versions, so this can fail; returns true only if the route really matches [on] afterwards.
+     */
+    boolean setSpeakerphone(boolean on) = 13;
+
+    /** Hangs up the active call (Telecom, falling back to the hardware End key). Returns true if a hang-up was issued. */
+    boolean endCall() = 14;
 }

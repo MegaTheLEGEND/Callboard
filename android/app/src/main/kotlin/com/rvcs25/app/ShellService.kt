@@ -121,6 +121,31 @@ class ShellService(context: Context) : IShell.Stub() {
         }
     }
 
+    // Call controls. They run on a plain thread (like the mic), never on the Binder thread, so the audio and Telecom
+    // services see the shell identity rather than the app's.
+    private fun <T> onPlainThread(timeoutMs: Long = 4000, block: () -> T): T? {
+        var result: T? = null
+        val t = Thread({ result = runCatching(block).getOrNull() }, "call-control")
+        t.start()
+        t.join(timeoutMs)
+        return result
+    }
+
+    override fun setMicMuted(on: Boolean): Boolean {
+        enforceCaller()
+        return onPlainThread { CallControls.setMuted(ctx, on) } ?: false
+    }
+
+    override fun setSpeakerphone(on: Boolean): Boolean {
+        enforceCaller()
+        return onPlainThread { CallControls.setSpeaker(ctx, on) } ?: false
+    }
+
+    override fun endCall(): Boolean {
+        enforceCaller()
+        return onPlainThread(8000) { CallControls.endCall(ctx) } ?: false
+    }
+
     override fun status(): String {
         enforceCaller()
         val token = Binder.clearCallingIdentity()

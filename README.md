@@ -4,11 +4,18 @@
 phone call** (the other person hears it) **and on your loudspeaker** at the same time. The RVC voice changer below is still
 here, but it is now secondary: open it from the **Voice changer ›** button on the home screen.
 
-- **Add sound** (the dashed pad) opens the file picker; pick several at once. Clips are decoded once and stored in the app.
-- **Long-press** a pad to rename, change colour, reorder or delete it. **STOP** ends whatever is playing.
-- **Speaker: ON/OFF** turns the loudspeaker copy on or off. **Level in call** sets how loud clips are for the other person.
+- **Add sound** (the dashed pad) opens the file picker; pick several at once. Clips can be up to 60 minutes long. They are decoded
+  once and streamed from storage, so length does not affect memory (about 8.6 MB of storage per minute).
+- **Long-press** a pad to rename, change colour, reorder or delete it.
+- **Bottom bar:** **STOP** ends the clip that is playing. **Mute** and **Speaker** follow the dialer (they light up when the call is
+  muted / on speakerphone) and can also switch them. **End** hangs up. They are dimmed when there is no call. **Level in call** sets
+  how loud clips are for the other person.
+- Clips still play when you have muted yourself: while a clip plays, the far end hears the clip instead of your mic, and your mute is
+  put back when it ends. On this phone, clips follow the call route (loudspeaker with speakerphone on, otherwise the earpiece).
+- Mute, Speaker and End go through the Shizuku helper. Android (and Samsung) may refuse to let a non-dialer app change the call route
+  or update the dialer's own mute icon; the buttons always show the real state and say so when a change didn't go through.
 - The chips at the top show whether the Shizuku helper is ready (tap it to connect) and whether you are on a call.
-  Playing into a call needs the Shizuku helper and a connected call; otherwise the clip plays on the speaker only and the app says why.
+  Playing into a call needs the Shizuku helper and a connected call; otherwise the clip only plays on this phone and the app says why.
 - If the voice changer is running live, soundboard clips are mixed into it, so the two never cut each other off.
 
 ---
