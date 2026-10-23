@@ -116,6 +116,8 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         rvcPill = pill("●  Voice changer ›", Cb.MUTED) { openVoiceChanger() }
         titleRow.addView(rvcPill)
+        titleRow.addView(pill("⚙", Cb.TEXT, Cb.SURFACE2) { startActivity(Intent(this, SettingsActivity::class.java)) },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(8) })
         header.addView(titleRow)
 
         val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(12), 0, 0) }
@@ -262,20 +264,25 @@ class MainActivity : Activity() {
     private fun toggleMute() {
         if (!Player.inCall(this)) { flash("No call to mute."); return }
         val svc = RvcApp.link.service ?: run { flash("Connect the Shizuku helper first (tap its chip)."); return }
+        val changerLive = voiceChangerLive()
+        muteTouchedAt = SystemClock.elapsedRealtime()
+        // "Muted (Voice Changer)": the first press stops the voice changer and the call STAYS muted; the next press unmutes.
+        if (shownMuted && changerLive) {
+            VoiceService.stop(this)
+            flash("Voice changer stopped. The call is still muted, tap again to unmute.")
+            Thread {
+                SystemClock.sleep(700)              // once the voice changer has let go of the call, make sure the mute is still on
+                runCatching { svc.setMicMuted(true) }
+                muteTouchedAt = SystemClock.elapsedRealtime()   // keep showing "Muted" until the flag has settled
+            }.start()
+            return
+        }
         // Go by what the button shows: while a clip plays the helper holds the system flag clear, so it can't be read then.
         val want = !shownMuted
-        val changerLive = voiceChangerLive()
         shownMuted = want
-        muteTouchedAt = SystemClock.elapsedRealtime()
-        // Unmuting while a voice changer is live means "I'm talking now": switch the voice changer off first.
-        if (!want && changerLive) VoiceService.stop(this)
         Thread {
             val ok = runCatching { svc.setMicMuted(want) }.getOrDefault(false)
             if (!ok) flash("Couldn't change mute.")
-            if (!want && changerLive) {          // once more after the voice changer has let go of the call
-                SystemClock.sleep(700)
-                runCatching { svc.setMicMuted(false) }
-            }
         }.start()
     }
 

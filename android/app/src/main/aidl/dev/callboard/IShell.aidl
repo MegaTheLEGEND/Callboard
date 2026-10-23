@@ -66,4 +66,14 @@ interface IShell {
      * could not be read. Used to show the in-call shortcut only while the dialer is on screen.
      */
     String foregroundPackage() = 15;
+
+    /**
+     * Like [startMic], but records from a specific input device (Bluetooth hands-free, USB...), matched by
+     * AudioDeviceInfo [deviceType] and [deviceAddress]. The helper tries to bring a Bluetooth link up itself. Returns a
+     * short note when it had to fall back to the default route, otherwise "".
+     */
+    String startMicOn(in ParcelFileDescriptor sink, int rate, int source, int deviceType, String deviceAddress) = 16;
+
+    /** Grants this app "Display over other apps" (appops SYSTEM_ALERT_WINDOW allow). Returns true if the command succeeded. */
+    boolean grantOverlay() = 17;
 }

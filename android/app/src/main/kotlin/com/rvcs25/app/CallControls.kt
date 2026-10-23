@@ -46,4 +46,12 @@ internal object CallControls {
         )) PKG.find(sh(cmd))?.let { return it.groupValues[1] }
         return ""
     }
+
+    /** `appops set <pkg> SYSTEM_ALERT_WINDOW allow`: lets the app draw its in-call shortcut without the Settings detour. */
+    fun grantOverlay(pkg: String): Boolean = runCatching {
+        require(Regex("[A-Za-z0-9_.]+").matches(pkg))
+        val p = ProcessBuilder("appops", "set", pkg, "SYSTEM_ALERT_WINDOW", "allow").redirectErrorStream(true).start()
+        p.inputStream.readBytes()
+        p.waitFor(5, TimeUnit.SECONDS) && p.exitValue() == 0
+    }.getOrDefault(false)
 }

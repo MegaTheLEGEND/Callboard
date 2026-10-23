@@ -16,6 +16,7 @@ import kotlin.system.exitProcess
  */
 class ShellService(context: Context) : IShell.Stub() {
     private val appUid = context.applicationInfo.uid
+    private val appPkg = context.packageName
     private val ctx = ShellEnv.shellContext(context)
     private val injector = Injector(ctx)
     private val mic = MicCapture(ctx)
@@ -89,6 +90,27 @@ class ShellService(context: Context) : IShell.Stub() {
         opener.join(5000)
         failure?.let { throw IllegalStateException(Tap.describe(it)) }
         check(!opener.isAlive) { "mic open timed out" }
+    }
+
+    override fun startMicOn(sink: ParcelFileDescriptor, rate: Int, source: Int, deviceType: Int, deviceAddress: String): String {
+        enforceCaller()
+        require(rate == 8000 || rate == 16000 || rate == 48000) { "unsupported mic rate $rate" }
+        var failure: Throwable? = null
+        var note = ""
+        // Same plain-thread rule as startMic; opening a Bluetooth input can wait a few seconds for the link.
+        val opener = Thread({
+            try { note = mic.start(sink, rate, source, deviceType, deviceAddress) } catch (t: Throwable) { failure = t }
+        }, "mic-open")
+        opener.start()
+        opener.join(9000)
+        failure?.let { throw IllegalStateException(Tap.describe(it)) }
+        check(!opener.isAlive) { "mic open timed out" }
+        return note
+    }
+
+    override fun grantOverlay(): Boolean {
+        enforceCaller()
+        return onPlainThread(7000) { CallControls.grantOverlay(appPkg) } ?: false
     }
 
     override fun stopMic() {

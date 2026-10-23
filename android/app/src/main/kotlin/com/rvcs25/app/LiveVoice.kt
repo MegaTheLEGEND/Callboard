@@ -1,6 +1,7 @@
 package com.rvcs25.app
 
 import android.content.Context
+import android.media.AudioManager
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import dev.callboard.IShell
@@ -39,6 +40,13 @@ object LiveVoice {
     @Volatile private var dec: Decimator? = null
     @Volatile private var ring: ShortRing? = null
     private var appMic: AppMic? = null
+    /** Loudest mic sample seen this session (the UI resets [inPeak], this one is only for the silence check). */
+    @Volatile private var everPeak = 0
+    /** True while the mic is captured by the Shizuku helper, false while by the app itself. */
+    @Volatile private var micOnHelper = false
+    /** True while the watchdog swaps the mic path, so the old path closing is not treated as a failure. */
+    @Volatile private var swapping = false
+    @Volatile private var session = 0
 
     private val mixLock = Any()
     private var mixSrc: PcmReader? = null
@@ -101,32 +109,29 @@ object LiveVoice {
             try { svc.playStream(up[0], rate) } finally { up[0].close() }
             upOut = ParcelFileDescriptor.AutoCloseOutputStream(up[1])
 
-            // Microphone: prefer the helper (a normal app's mic can be silenced during a cellular call).
-            // A specific input device (Bluetooth, USB, ...) can only be captured by the app's own mic path: the
-            // helper's recorder cannot be pointed at a device.
-            var shellOk = false
+            // Microphone. Android silences the phone's own mics while a call is up, so the chosen device (a Bluetooth
+            // headset / watch) is what to record from. The setting picks which process records it first: the app
+            // itself, or the Shizuku helper (which can also be pointed at the device). If that path delivers only
+            // digital silence, the watchdog below tries the other one.
+            val dev = AudioInputs.selected(ctx)
             // The mic reader threads check [active], so it must already be true when they start (else they quit at once).
             active = true
-            // A chosen Bluetooth (SCO / LE / hearing aid) mic must never go through the helper: it can't pick a device.
-            val wantsDevice = inputDevice != 0 || AudioInputs.viaComm || Settings.micDeviceKey.isNotEmpty()
-            if (shellMic && !wantsDevice) {
-                shellOk = startShellMic(svc, unprocessed)
-                if (!shellOk) micNote = (micNote.ifEmpty { "helper mic unavailable" }) +
-                    "; using the app mic, which Android may silence during a call"
+            everPeak = 0; swapping = false
+            val mySession = ++session
+            var micOk = false
+            if (shellMic) {
+                micOk = startShellMic(svc, unprocessed, dev)
+                if (!micOk) micNote = (micNote.ifEmpty { "helper mic unavailable" }) + "; using the app mic"
             }
-            if (!shellOk) {
-                if (classic) {
-                    val m = AppMic(ctx.applicationContext, inputDevice, unprocessed,
-                        { b, n -> onMic(b, n) }, { msg -> if (active) fail(msg) })
-                    err = m.start()
-                    if (err.isNotEmpty()) throw IllegalStateException("app mic: $err")
-                    appMic = m
-                } else {
-                    err = NativeBridge.nativeStartAppMic(inputDevice, unprocessed)
-                    if (err.isNotEmpty()) throw IllegalStateException("app mic: $err")
+            if (!micOk) {
+                err = startAppMic(ctx, classic, inputDevice, unprocessed)
+                if (err.isNotEmpty()) {
+                    // Last resort: the helper, recording from the chosen device.
+                    if (shellMic || !startShellMic(svc, unprocessed, dev)) throw IllegalStateException("app mic: $err")
+                    micNote = "app mic: $err; using the helper mic"
                 }
-                micMode = if (AudioInputs.active.isNotEmpty()) "app mic: ${AudioInputs.active}" else if (classic) "app mic" else "app mic (Oboe)"
             }
+            startWatchdog(ctx.applicationContext, svc, classic, unprocessed, dev, mySession)
 
             active = true
             pump = Thread({ pumpLoop(rate) }, "uplink-pump").apply { priority = Thread.MAX_PRIORITY; start() }
@@ -180,6 +185,7 @@ object LiveVoice {
         var pk = 0
         for (i in 0 until n) { val v = kotlin.math.abs(buf[i].toInt()); if (v > pk) pk = v }
         if (pk > inPeak) inPeak = pk
+        if (pk > everPeak) everPeak = pk
         if (classicMode) {
             val f = fx; val d = dec; val r = ring
             if (f != null && d != null && r != null) { f.process(buf, n); d.process(buf, n, r) }
@@ -188,12 +194,23 @@ object LiveVoice {
         }
     }
 
-    private fun startShellMic(svc: IShell, unprocessed: Boolean): Boolean {
-        val candidates = if (micSource != 0) listOf(micSource) else listOf(if (unprocessed) 9 else 1, 1).distinct()
-        for (src in candidates) { // 9 = UNPROCESSED, 1 = MIC
+    /** Starts the helper mic, on [dev] when one is chosen. True if it is running. */
+    private fun startShellMic(svc: IShell, unprocessed: Boolean, dev: AudioInputs.Dev?): Boolean {
+        val bt = dev?.viaComm == true
+        val candidates = when {
+            micSource != 0 -> listOf(micSource)
+            bt -> listOf(7, 1)                                   // a Bluetooth link carries the call-quality (communication) source
+            else -> listOf(if (unprocessed) 9 else 1, 1).distinct()   // 9 = UNPROCESSED, 1 = MIC
+        }
+        for (src in candidates) {
             val pipe = ParcelFileDescriptor.createPipe()
             try {
-                try { svc.startMic(pipe[1], MIC_RATE, src) } finally { pipe[1].close() }
+                try {
+                    if (dev != null) {
+                        val note = svc.startMicOn(pipe[1], MIC_RATE, src, dev.type, dev.address)
+                        if (note.isNotEmpty()) micNote = "helper mic: $note"
+                    } else svc.startMic(pipe[1], MIC_RATE, src)
+                } finally { pipe[1].close() }
             } catch (t: Throwable) {
                 micNote = "helper mic (source $src): ${t.message}"
                 runCatching { pipe[0].close() }
@@ -201,11 +218,74 @@ object LiveVoice {
             }
             val input = ParcelFileDescriptor.AutoCloseInputStream(pipe[0])
             micIn = input
-            micMode = "shell mic (source $src)"
+            micOnHelper = true
+            micMode = "shell mic (source $src)" + if (dev != null) " on ${dev.label}" else ""
             micThread = Thread({ micLoop(input) }, "shell-mic-read").apply { priority = Thread.MAX_PRIORITY; start() }
             return true
         }
         return false
+    }
+
+    /** Starts the app's own mic (Oboe for RVC, AudioRecord for the classic changer). "" = started, otherwise why not. */
+    private fun startAppMic(ctx: Context, classic: Boolean, inputDevice: Int, unprocessed: Boolean): String {
+        val err: String
+        if (classic) {
+            val m = AppMic(ctx.applicationContext, inputDevice, unprocessed,
+                { b, n -> onMic(b, n) }, { msg -> if (active && !swapping) fail(msg) })
+            err = m.start()
+            if (err.isEmpty()) appMic = m
+        } else {
+            err = NativeBridge.nativeStartAppMic(inputDevice, unprocessed)
+        }
+        if (err.isEmpty()) {
+            micOnHelper = false
+            micMode = if (AudioInputs.active.isNotEmpty()) "app mic: ${AudioInputs.active}" else if (classic) "app mic" else "app mic (Oboe)"
+        }
+        return err
+    }
+
+    /**
+     * Digital silence (every sample exactly 0) for ~3.5 s means Android, or the call, is muting this capture path, not that
+     * you are quiet. The classic changer then tries the other path once (helper <-> app); RVC's native mic can't be swapped
+     * while running, so it only reports.
+     */
+    private fun startWatchdog(app: Context, svc: IShell, classic: Boolean, unprocessed: Boolean, dev: AudioInputs.Dev?, id: Int) {
+        Thread({
+            SystemClock.sleep(3500)
+            if (!active || session != id || everPeak > 0) return@Thread
+            val why = silenceReason(app)
+            if (!classic) { micNote = "No microphone audio from the ${if (micOnHelper) "helper" else "app"} mic.$why"; return@Thread }
+            val toHelper = !micOnHelper
+            micNote = "No audio from the ${if (micOnHelper) "helper" else "app"} mic; trying the ${if (toHelper) "helper" else "app"} mic.$why"
+            swapping = true
+            try {
+                if (micOnHelper) {
+                    runCatching { svc.stopMic() }
+                    runCatching { micIn?.close() }; micIn = null
+                    micThread?.let { if (it !== Thread.currentThread()) runCatching { it.join(500) } }; micThread = null
+                } else {
+                    runCatching { appMic?.stop() }; appMic = null
+                }
+                val ok = if (toHelper) startShellMic(svc, unprocessed, dev) else startAppMic(app, true, 0, unprocessed).isEmpty()
+                if (!ok) { micNote += " Couldn't start it."; return@Thread }
+                if (!active || session != id) {            // the session ended while the new path was opening
+                    runCatching { svc.stopMic() }; runCatching { appMic?.stop() }; appMic = null
+                    return@Thread
+                }
+            } finally { swapping = false }
+            SystemClock.sleep(3000)
+            if (active && session == id && everPeak == 0) micNote = "No microphone audio from either path.$why"
+        }, "mic-watchdog").apply { isDaemon = true; start() }
+    }
+
+    private fun silenceReason(app: Context): String {
+        val am = app.getSystemService(AudioManager::class.java)
+        return buildString {
+            if (runCatching { am.isMicrophoneMute }.getOrDefault(false))
+                append(" The call is muted, and some phones then silence the mic too: try turning off “Mute the dialer when a voice changer goes live” in Settings.")
+            if (runCatching { am.activeRecordingConfigurations.any { it.isClientSilenced } }.getOrDefault(false))
+                append(" Android reports a recording as silenced.")
+        }
     }
 
     private fun micLoop(input: InputStream) {
@@ -224,7 +304,7 @@ object LiveVoice {
                 onMic(shorts, frame)
             }
         } catch (t: Throwable) {
-            if (active) fail("mic stream ended: ${t.message}")
+            if (active && !swapping) fail("mic stream ended: ${t.message}")
         }
     }
 

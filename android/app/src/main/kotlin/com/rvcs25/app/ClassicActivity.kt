@@ -57,9 +57,16 @@ class ClassicActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(40), dp(18), dp(24))
         }
-        root.addView(TextView(this).apply {
-            text = "‹ CallBoard"; textSize = 15f; setTextColor(Cb.ACCENT); setPadding(0, 0, 0, dp(8))
-            setOnClickListener { finish() }
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(TextView(context).apply {
+                text = "‹ CallBoard"; textSize = 15f; setTextColor(Cb.ACCENT); setPadding(0, 0, 0, dp(8))
+                setOnClickListener { finish() }
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(TextView(context).apply {
+                text = "Settings ›"; textSize = 15f; setTextColor(Cb.ACCENT); setPadding(0, 0, 0, dp(8))
+                setOnClickListener { startActivity(android.content.Intent(this@ClassicActivity, SettingsActivity::class.java)) }
+            })
         })
         root.addView(TextView(this).apply { text = "Classic voice changer"; textSize = 22f; setTextColor(Cb.TEXT) })
         root.addView(TextView(this).apply {
