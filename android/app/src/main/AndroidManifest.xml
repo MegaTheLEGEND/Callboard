@@ -43,6 +43,9 @@
         <activity android:name=".RvcActivity" android:exported="false"
             android:screenOrientation="portrait" />
 
+        <activity android:name=".ClassicActivity" android:exported="false"
+            android:screenOrientation="portrait" />
+
         <activity android:name=".SettingsActivity" android:exported="false"
             android:screenOrientation="portrait" />
 

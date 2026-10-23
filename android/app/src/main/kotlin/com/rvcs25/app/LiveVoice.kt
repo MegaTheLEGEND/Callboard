@@ -28,6 +28,12 @@ object LiveVoice {
     @Volatile var micSource = 0
     /** Uplink rate (8000 / 16000) of the running live session; soundboard clips are converted to this. */
     @Volatile var rate = 8000; private set
+    /** True while the classic (modulation) voice changer feeds the call instead of the RVC engine. */
+    @Volatile var classicMode = false; private set
+    @Volatile private var fx: ClassicFx? = null
+    @Volatile private var dec: Decimator? = null
+    @Volatile private var ring: ShortRing? = null
+    private var appMic: AppMic? = null
 
     private val mixLock = Any()
     private var mixSrc: PcmReader? = null
@@ -52,16 +58,33 @@ object LiveVoice {
     private var micThread: Thread? = null
     private var appCtx: Context? = null
 
-    /** Returns "" on success, otherwise a message. */
+    /** RVC live call. Returns "" on success, otherwise a message. */
     @Synchronized
-    fun start(ctx: Context, slackMs: Int, rate: Int, shellMic: Boolean, unprocessed: Boolean, inputDevice: Int = 0): String {
+    fun start(ctx: Context, slackMs: Int, rate: Int, shellMic: Boolean, unprocessed: Boolean, inputDevice: Int = 0): String =
+        begin(false, ctx, slackMs, rate, shellMic, unprocessed, inputDevice)
+
+    /** Classic (modulation) voice changer on the call: same mic and uplink path, effects run here instead of the RVC engine. */
+    @Synchronized
+    fun startClassic(ctx: Context, rate: Int, shellMic: Boolean, unprocessed: Boolean, inputDevice: Int = 0): String =
+        begin(true, ctx, 0, rate, shellMic, unprocessed, inputDevice)
+
+    private fun begin(classic: Boolean, ctx: Context, slackMs: Int, rate: Int, shellMic: Boolean, unprocessed: Boolean, inputDevice: Int): String {
         stop()
         this.rate = rate
         clearMix()
         appCtx = ctx.applicationContext
         val svc: IShell = RvcApp.link.service ?: return "Shizuku helper not connected (start Shizuku, tap Grant Shizuku)"
-        var err = NativeBridge.nativeStartLive(slackMs, rate)
-        if (err.isNotEmpty()) return err
+        var err = ""
+        if (classic) {
+            ClassicPresets.refresh()
+            classicMode = true
+            fx = ClassicFx()
+            dec = Decimator(48000 / rate, rate)
+            ring = ShortRing(rate / 5)
+        } else {
+            err = NativeBridge.nativeStartLive(slackMs, rate)
+            if (err.isNotEmpty()) return err
+        }
         try {
             svc.setMethod(method)
             svc.setKeepUnmuted(keepUnmuted)
@@ -77,9 +100,17 @@ object LiveVoice {
             var shellOk = false
             if (shellMic && inputDevice == 0) shellOk = startShellMic(svc, unprocessed)
             if (!shellOk) {
-                err = NativeBridge.nativeStartAppMic(inputDevice, unprocessed)
-                if (err.isNotEmpty()) throw IllegalStateException("app mic: $err")
-                micMode = if (AudioInputs.active.isNotEmpty()) "app mic: ${AudioInputs.active}" else "app mic (Oboe)"
+                if (classic) {
+                    val m = AppMic(ctx.applicationContext, inputDevice, unprocessed,
+                        { b, n -> onMic(b, n) }, { msg -> if (active) fail(msg) })
+                    err = m.start()
+                    if (err.isNotEmpty()) throw IllegalStateException("app mic: $err")
+                    appMic = m
+                } else {
+                    err = NativeBridge.nativeStartAppMic(inputDevice, unprocessed)
+                    if (err.isNotEmpty()) throw IllegalStateException("app mic: $err")
+                }
+                micMode = if (AudioInputs.active.isNotEmpty()) "app mic: ${AudioInputs.active}" else if (classic) "app mic" else "app mic (Oboe)"
             }
 
             active = true
@@ -94,7 +125,7 @@ object LiveVoice {
 
     @Synchronized
     fun stop() {
-        if (!active && upOut == null && micIn == null) {
+        if (!active && upOut == null && micIn == null && appMic == null) {
             runCatching { NativeBridge.nativeStop() }
             return
         }
@@ -102,6 +133,7 @@ object LiveVoice {
     }
 
     private fun teardown() {
+        val wasClassic = classicMode
         active = false
         micMode = ""
         clearMix()
@@ -113,10 +145,27 @@ object LiveVoice {
         runCatching { micIn?.close() }
         upOut = null
         micIn = null
+        runCatching { appMic?.stop() }
+        appMic = null
         for (t in listOf(pump, micThread)) if (t != null && t !== Thread.currentThread()) runCatching { t.join(300) }
         pump = null
         micThread = null
-        runCatching { NativeBridge.nativeStop() }
+        if (wasClassic) {
+            classicMode = false
+            fx = null; dec = null; ring = null
+        } else {
+            runCatching { NativeBridge.nativeStop() }
+        }
+    }
+
+    /** One 20 ms frame of 48 kHz mic audio, from either the helper mic pipe or the app mic. */
+    private fun onMic(buf: ShortArray, n: Int) {
+        if (classicMode) {
+            val f = fx; val d = dec; val r = ring
+            if (f != null && d != null && r != null) { f.process(buf, n); d.process(buf, n, r) }
+        } else {
+            NativeBridge.nativePushMic(buf, n)
+        }
     }
 
     private fun startShellMic(svc: IShell, unprocessed: Boolean): Boolean {
@@ -151,7 +200,7 @@ object LiveVoice {
                     off += n
                 }
                 for (i in 0 until frame) shorts[i] = ((bytes[2 * i + 1].toInt() shl 8) or (bytes[2 * i].toInt() and 0xff)).toShort()
-                NativeBridge.nativePushMic(shorts, frame)
+                onMic(shorts, frame)
             }
         } catch (t: Throwable) {
             if (active) fail("mic stream ended: ${t.message}")
@@ -162,10 +211,21 @@ object LiveVoice {
         val n = rate / 50                        // 20 ms of uplink audio
         val shorts = ShortArray(n)
         val bytes = ByteArray(n * 2)
+        val r = if (classicMode) ring else null
+        if (r != null) {
+            // Let the effect chain get ~40 ms ahead first so the uplink does not start with gaps.
+            val t0 = SystemClock.elapsedRealtime()
+            while (active && r.available() < n * 2 && SystemClock.elapsedRealtime() - t0 < 600) SystemClock.sleep(5)
+        }
         var next = SystemClock.elapsedRealtimeNanos()
         try {
             while (active) {
-                NativeBridge.nativePullUplink(shorts, n)
+                if (r != null) {
+                    val got = r.read(shorts, n)
+                    for (i in got until n) shorts[i] = 0
+                } else {
+                    NativeBridge.nativePullUplink(shorts, n)
+                }
                 mixInto(shorts, n)
                 for (i in 0 until n) {
                     val s = shorts[i].toInt()

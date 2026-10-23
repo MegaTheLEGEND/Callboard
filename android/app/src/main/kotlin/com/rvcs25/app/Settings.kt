@@ -72,6 +72,17 @@ object Settings {
 
     val gateDb: Float get() = if (gate == 0) -60f else -(60f - gate)
 
+    // ---- classic voice changer (modulation) ------------------------------------------------------
+    /** Selected preset: 0..n-1 = built-in presets, n = Custom (see ClassicPresets). */
+    var classicPreset by IntPref("classicPreset", 0, 0, 30)
+    /** Custom preset values. */
+    var cPitch by IntPref("cPitch", 0, -12, 12)
+    var cRingMix by IntPref("cRingMix", 0, 0, 100)
+    var cRingHz by IntPref("cRingHz", 50, 20, 500)
+    var cDist by IntPref("cDist", 0, 0, 100)
+    var cEcho by IntPref("cEcho", 0, 0, 100)
+    var cPhone by BoolPref("cPhone", false)
+
     // ---- performance (need a model reload) ------------------------------------------------------
     var sustained by BoolPref("sustained", false)
     var cpuBackend by BoolPref("cpuBackend", false)

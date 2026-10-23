@@ -237,6 +237,7 @@ class RvcActivity : Activity() {
 
     private fun toggleRun() {
         if (!loaded) return
+        if (VoiceService.classicRunning) { status.text = VoiceService.blocker(false); return }   // RVC and classic never run together
         if (VoiceService.running) {
             VoiceService.stop(this)
             btnRun.text = "Start"
@@ -245,7 +246,8 @@ class RvcActivity : Activity() {
                 requestPerms(); return
             }
             pushParams()
-            VoiceService.start(this, Settings.slack, Settings.rawMic)
+            val why = VoiceService.start(this, Settings.slack, Settings.rawMic)
+            if (why.isNotEmpty()) { status.text = why; return }
             btnRun.text = "Stop"
             status.text = "Starting audio… use headphones to avoid feedback."
         }
@@ -253,6 +255,7 @@ class RvcActivity : Activity() {
 
     private fun toggleLive() {
         if (!loaded) return
+        if (VoiceService.classicRunning) { status.text = VoiceService.blocker(false); return }
         if (VoiceService.running) {
             if (VoiceService.mode == "live") VoiceService.stop(this)
             return
@@ -268,8 +271,8 @@ class RvcActivity : Activity() {
         LiveVoice.method = Settings.method
         LiveVoice.micSource = Settings.micSource
         LiveVoice.keepUnmuted = Settings.keepUnmuted
-        VoiceService.startLive(this, Settings.slack, if (Settings.hd16k) 16000 else 8000, Settings.shellMic, Settings.rawMic)
-        status.text = "Starting live call audio… the call must already be connected."
+        val why = VoiceService.startLive(this, Settings.slack, if (Settings.hd16k) 16000 else 8000, Settings.shellMic, Settings.rawMic)
+        status.text = if (why.isNotEmpty()) why else "Starting live call audio… the call must already be connected."
     }
 
     /** Coming back to this screen: show the engine as it really is (loaded / loading / running), not as a fresh screen. */
@@ -281,6 +284,7 @@ class RvcActivity : Activity() {
             btnRun.isEnabled = true
             btnLive.isEnabled = true
             status.text = when {
+                VoiceService.classicRunning -> "The classic voice changer is running. Stop it before using RVC."
                 VoiceService.running && VoiceService.mode == "live" -> "Live call audio is running."
                 VoiceService.running -> "Voice changer is running."
                 else -> "Model ready."
@@ -313,7 +317,7 @@ class RvcActivity : Activity() {
                     btnRun.isEnabled = !running || mode == "test"
                     btnLive.isEnabled = !running || mode == "live"
                     if (VoiceService.lastError.isNotEmpty() && !running) status.text = "Audio error: ${VoiceService.lastError}\n${callDiag()}"
-                    if (s[16] > 0f && running) {          // headset unplugged / route changed
+                    if (s[16] > 0f && running && !VoiceService.classicRunning) {          // headset unplugged / route changed
                         VoiceService.stop(this@RvcActivity)
                         status.text = "Audio device changed — press Start again."
                     }

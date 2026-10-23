@@ -34,8 +34,8 @@ import dev.callboard.ShizukuLink
 /**
  * CallBoard home screen: a dark button matrix. Tap a pad and the clip plays into the phone call AND on this phone.
  * The bottom bar has Stop (the clip), Mute (follows the dialer) and End (hang up).
- * Long-press a pad to rename / recolour / reorder / delete it. The voice changer (RVC) lives behind the
- * "Voice changer" button and is secondary.
+ * Long-press a pad to rename / recolour / reorder / delete it. The voice changers live behind the
+ * "Voice changer" button (it asks: classic modulation or RVC) and are secondary.
  */
 class MainActivity : Activity() {
     private val ui = Handler(Looper.getMainLooper())
@@ -112,7 +112,7 @@ class MainActivity : Activity() {
             textSize = 30f; setTextColor(Cb.TEXT); letterSpacing = -0.02f
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        rvcPill = pill("●  Voice changer ›", Cb.MUTED) { startActivity(Intent(this, RvcActivity::class.java)) }
+        rvcPill = pill("●  Voice changer ›", Cb.MUTED) { openVoiceChanger() }
         titleRow.addView(rvcPill)
         header.addView(titleRow)
 
@@ -177,6 +177,49 @@ class MainActivity : Activity() {
         renderGrid()
         ui.post(poll)
         ui.post(helperPoll)
+    }
+
+    // ------------------------------------------------------------------ voice changer chooser
+    /** "Voice changer" asks which kind: classic (modulation presets) or RVC (AI voice). The two never run together. */
+    private fun openVoiceChanger() {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(6), dp(16), dp(2)) }
+        val holder = arrayOfNulls<AlertDialog>(1)
+
+        fun card(title: String, sub: String, running: Boolean, go: () -> Unit) = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(14), dp(16), dp(14))
+            isClickable = true; isFocusable = true
+            background = GradientDrawable().apply {
+                cornerRadius = dp(16).toFloat(); setColor(Cb.SURFACE2)
+                if (running) setStroke(dp(1), Cb.ACCENT)
+            }
+            addView(TextView(context).apply {
+                text = if (running) "$title   ● running" else title
+                textSize = 16f; setTextColor(Cb.TEXT)
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            })
+            addView(TextView(context).apply { text = sub; textSize = 12f; setTextColor(Cb.MUTED); setPadding(0, dp(4), 0, 0) })
+            setOnClickListener { holder[0]?.dismiss(); go() }
+        }
+
+        box.addView(card("Classic voice changer", "Modulation presets (deep, chipmunk, robot, alien, demon, telephone) or your own custom mix. Fast, no model.",
+            VoiceService.classicRunning) { chooseVoiceChanger(true) })
+        box.addView(card("RVC voice changer", "AI voice conversion using your loaded voice model.",
+            VoiceService.rvcRunning) { chooseVoiceChanger(false) },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) })
+        holder[0] = dialog().setTitle("Voice changer").setView(box).setNegativeButton("Cancel", null).show()
+    }
+
+    private fun chooseVoiceChanger(classic: Boolean) {
+        val target = if (classic) ClassicActivity::class.java else RvcActivity::class.java
+        val otherRunning = if (classic) VoiceService.rvcRunning else VoiceService.classicRunning
+        if (!otherRunning) { startActivity(Intent(this, target)); return }
+        dialog().setTitle("Switch voice changer?")
+            .setMessage(
+                if (classic) "RVC is running. RVC and the classic voice changer can't run at the same time, so RVC will be stopped."
+                else "The classic voice changer is running. RVC and the classic voice changer can't run at the same time, so the classic one will be stopped."
+            )
+            .setPositiveButton("Stop and switch") { _, _ -> VoiceService.stop(this); startActivity(Intent(this, target)) }
+            .setNegativeButton("Cancel", null).show()
     }
 
     // ------------------------------------------------------------------ bar buttons
