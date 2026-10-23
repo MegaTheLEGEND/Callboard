@@ -30,20 +30,19 @@ object LiveVoice {
     @Volatile var rate = 8000; private set
 
     private val mixLock = Any()
-    private var mixData: ShortArray? = null
-    private var mixPos = 0
+    private var mixSrc: PcmReader? = null
+    private val mixBuf = ShortArray(960)
 
-    /** Soundboard: adds [clip] (already at [rate], mono) on top of the live voice. Replaces a clip still playing. */
-    fun mixClip(clip: ShortArray) { synchronized(mixLock) { mixData = clip; mixPos = 0 } }
-    fun clearMix() { synchronized(mixLock) { mixData = null; mixPos = 0 } }
+    /** Soundboard: adds the clip streamed from [src] (already at [rate], mono) on top of the live voice. Replaces a clip still playing. */
+    fun mixClip(src: PcmReader) { synchronized(mixLock) { mixSrc?.close(); mixSrc = src } }
+    fun clearMix() { synchronized(mixLock) { mixSrc?.close(); mixSrc = null } }
 
     private fun mixInto(buf: ShortArray, n: Int) {
         synchronized(mixLock) {
-            val c = mixData ?: return
-            val len = minOf(n, c.size - mixPos)
-            for (i in 0 until len) buf[i] = (buf[i] + c[mixPos + i]).coerceIn(-32768, 32767).toShort()
-            mixPos += len
-            if (mixPos >= c.size) mixData = null
+            val src = mixSrc ?: return
+            val got = src.read(mixBuf, minOf(n, mixBuf.size))
+            for (i in 0 until got) buf[i] = (buf[i] + mixBuf[i]).coerceIn(-32768, 32767).toShort()
+            if (got < n) { src.close(); mixSrc = null }
         }
     }
 

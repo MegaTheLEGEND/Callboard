@@ -30,7 +30,8 @@ import android.widget.Toast
 import dev.callboard.ShizukuLink
 
 /**
- * Callboard home screen: a dark button matrix. Tap a pad and the clip plays into the phone call AND on the speaker.
+ * Callboard home screen: a dark button matrix. Tap a pad and the clip plays into the phone call AND on this phone.
+ * The bottom bar has Stop (the clip), Mute and Speaker (both follow the dialer) and End (hang up).
  * Long-press a pad to rename / recolour / reorder / delete it. The voice changer (RVC) lives behind the
  * "Voice changer" button and is secondary.
  */
@@ -46,11 +47,18 @@ class MainActivity : Activity() {
     private lateinit var helperChip: TextView
     private lateinit var callChip: TextView
     private lateinit var noteView: TextView
-    private lateinit var speakerChip: TextView
+    private lateinit var stopBtn: TextView
+    private lateinit var muteBtn: TextView
+    private lateinit var speakerBtn: TextView
+    private lateinit var endBtn: TextView
     private lateinit var levelVal: TextView
 
     @Volatile private var helperLine = ""
     @Volatile private var importMsg = ""
+    @Volatile private var flashMsg = ""
+    @Volatile private var flashAt = 0L
+    private var shownMuted = false
+    private var tick = 0
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
@@ -122,27 +130,20 @@ class MainActivity : Activity() {
         root.addView(ScrollView(this).apply { isVerticalScrollBarEnabled = false; addView(grid) },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
-        // ---- bottom bar: stop, speaker, level
+        // ---- bottom bar: stop clip, mute, speaker, end call, then the level slider
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(14), dp(18), dp(14))
             val r = dp(24).toFloat()
             background = GradientDrawable().apply { setColor(Cb.SURFACE); cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f) }
         }
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val stop = TextView(this).apply {
-            text = "■  STOP"; textSize = 15f; setTextColor(Cb.DANGER); gravity = Gravity.CENTER
-            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD); letterSpacing = 0.06f
-            background = GradientDrawable().apply {
-                cornerRadius = dp(16).toFloat(); setColor(Cb.alpha(Cb.DANGER, 0x22)); setStroke(dp(1), Cb.alpha(Cb.DANGER, 0xAA))
-            }
-            setOnClickListener { Player.stop() }
+        stopBtn = barButton("■ STOP") { Player.stop() }
+        muteBtn = barButton("Mute") { toggleMute() }
+        speakerBtn = barButton("Speaker") { toggleSpeaker() }
+        endBtn = barButton("End") { hangUp() }
+        for ((i, v) in listOf(stopBtn, muteBtn, speakerBtn, endBtn).withIndex()) {
+            row.addView(v, LinearLayout.LayoutParams(0, dp(48), if (i == 0) 1.15f else 1f).apply { if (i > 0) leftMargin = dp(8) })
         }
-        row.addView(stop, LinearLayout.LayoutParams(0, dp(48), 1f))
-        speakerChip = TextView(this).apply {
-            textSize = 14f; gravity = Gravity.CENTER; typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setOnClickListener { Settings.sbSpeaker = !Settings.sbSpeaker; styleSpeaker() }
-        }
-        row.addView(speakerChip, LinearLayout.LayoutParams(0, dp(48), 1f).apply { leftMargin = dp(10) })
         bar.addView(row)
 
         val levelRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(12), 0, 0) }
@@ -167,20 +168,71 @@ class MainActivity : Activity() {
         root.addView(bar)
 
         setContentView(root)
-        styleSpeaker()
         renderGrid()
         ui.post(poll)
         ui.post(helperPoll)
     }
 
-    private fun styleSpeaker() {
-        val on = Settings.sbSpeaker
-        speakerChip.text = if (on) "Speaker: ON" else "Speaker: OFF"
-        speakerChip.setTextColor(if (on) Cb.BG else Cb.MUTED)
-        speakerChip.background = GradientDrawable().apply {
+    // ------------------------------------------------------------------ bar buttons
+    private fun barButton(text: String, onClick: () -> Unit) = TextView(this).apply {
+        this.text = text; textSize = 13f; gravity = Gravity.CENTER; maxLines = 1
+        typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        setOnClickListener { onClick() }
+    }
+
+    /** Outlined when [fill] is null, otherwise solid. */
+    private fun styleBtn(v: TextView, color: Int, fill: Boolean, dim: Boolean = false) {
+        v.setTextColor(if (fill) Cb.BG else color)
+        v.background = GradientDrawable().apply {
             cornerRadius = dp(16).toFloat()
-            setColor(if (on) Cb.ACCENT else Cb.SURFACE2)
+            if (fill) setColor(color) else { setColor(Cb.alpha(color, 0x18)); setStroke(dp(1), Cb.alpha(color, 0xAA)) }
         }
+        v.alpha = if (dim) 0.45f else 1f
+    }
+
+    private fun flash(msg: String) { flashMsg = msg; flashAt = System.currentTimeMillis() }
+
+    private fun toggleMute() {
+        if (!Player.inCall(this)) { flash("No call to mute."); return }
+        val svc = RvcApp.link.service ?: run { flash("Connect the Shizuku helper first (tap its chip)."); return }
+        val want = !Player.micMuted(this)
+        shownMuted = want
+        Thread {
+            val ok = runCatching { svc.setMicMuted(want) }.getOrDefault(false)
+            if (!ok) flash("Couldn't change mute.")
+        }.start()
+    }
+
+    private fun toggleSpeaker() {
+        if (!Player.inCall(this)) { flash("No call to switch."); return }
+        val svc = RvcApp.link.service ?: run { flash("Connect the Shizuku helper first (tap its chip)."); return }
+        val want = !Player.speakerphoneOn(this)
+        Thread {
+            val ok = runCatching { svc.setSpeakerphone(want) }.getOrDefault(false)
+            if (!ok) flash("Android wouldn't let Callboard switch the call route. Use the dialer's speaker button; this button still follows it.")
+        }.start()
+    }
+
+    private fun hangUp() {
+        if (!Player.inCall(this)) { flash("No call to end."); return }
+        Player.stop()
+        val svc = RvcApp.link.service
+        Thread {
+            val ok = svc != null && runCatching { svc.endCall() }.getOrDefault(false)
+            if (!ok) ui.post { hangUpFallback() }
+        }.start()
+    }
+
+    /** Without the helper: Android's own hang-up, which needs the phone-calls permission. */
+    private fun hangUpFallback() {
+        if (checkSelfPermission(android.Manifest.permission.ANSWER_PHONE_CALLS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.ANSWER_PHONE_CALLS), 2)
+            flash("Allow the phone-calls permission, then tap End again.")
+            return
+        }
+        @Suppress("DEPRECATION")
+        val ok = runCatching { getSystemService(android.telecom.TelecomManager::class.java).endCall() }.getOrDefault(false)
+        if (!ok) flash("Couldn't end the call.")
     }
 
     // ------------------------------------------------------------------ pads
@@ -191,7 +243,7 @@ class MainActivity : Activity() {
         val list = Sounds.all()
         if (list.isEmpty()) {
             grid.addView(TextView(this).apply {
-                text = "Add MP3s (or any audio) to build your board.\nTap a pad to play it into the call and on your speaker. " +
+                text = "Add MP3s (or any audio) to build your board.\nTap a pad to play it into the call and on this phone. " +
                     "Long-press a pad to rename, recolour, move or delete it."
                 textSize = 13f; setTextColor(Cb.MUTED); setPadding(dp(8), dp(4), dp(8), dp(10))
             })
@@ -351,11 +403,25 @@ class MainActivity : Activity() {
                 ShizukuLink.State.PERMISSION_DENIED -> setChip(helperChip, Cb.DANGER, "Shizuku denied · tap to retry")
                 ShizukuLink.State.ERROR -> setChip(helperChip, Cb.DANGER, "Helper error · tap to retry")
             }
-            if (Player.inCall(this@MainActivity)) setChip(callChip, Cb.ACCENT, "On a call") else setChip(callChip, Cb.MUTED, "No call")
+            val inCall = Player.inCall(this@MainActivity)
+            if (inCall) setChip(callChip, Cb.ACCENT, "On a call") else setChip(callChip, Cb.MUTED, "No call")
+
+            // Mute / speaker follow the dialer (read from the system), a few times a second.
+            if (tick++ % 2 == 0) {
+                // While a clip plays the helper lifts your mute so the clip is heard, so keep showing the real state.
+                if (Player.playingId == null) shownMuted = inCall && Player.micMuted(this@MainActivity)
+                val spk = inCall && Player.speakerphoneOn(this@MainActivity)
+                muteBtn.text = if (shownMuted) "Muted" else "Mute"
+                styleBtn(muteBtn, Cb.WARN, shownMuted, !inCall)
+                styleBtn(speakerBtn, Cb.ACCENT, spk, !inCall)
+                styleBtn(stopBtn, Cb.TEXT, false)
+                styleBtn(endBtn, Cb.DANGER, true, !inCall)
+            }
 
             val parts = ArrayList<String>()
             if (importMsg.isNotEmpty()) parts += importMsg
             if (Player.note.isNotEmpty()) parts += Player.note
+            if (flashMsg.isNotEmpty() && System.currentTimeMillis() - flashAt < 5000) parts += flashMsg
             if (helperLine.startsWith("error") && System.currentTimeMillis() - Player.lastPlayAt < 8000)
                 parts += "Call audio: $helperLine"
             noteView.text = parts.joinToString("\n")
