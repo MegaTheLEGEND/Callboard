@@ -63,7 +63,8 @@ class Geometry:
                 f"(only {(self.hubert_frames + 1) * 2} frames after upsampling)"
             )
         # FCPE only sees the newest block + 50 ms of lead-in (same as rtrvc.py)
-        self.fcpe_samples = self.block * 160 + 800
+        # RMVPE (U-Net + BiGRU) needs real context: use ~640 ms (64 frames, no padding to 32), not 150 ms
+        self.fcpe_samples = max(self.block * 160 + 800, min(self.hubert_samples, 63 * 160))
         self.fcpe_frames = self.fcpe_samples // 160 + 1
         self.out_samples = self.return_length * self.upp
         if self.upp * 100 != self.tgt_sr:

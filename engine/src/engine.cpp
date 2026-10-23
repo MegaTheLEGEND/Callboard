@@ -42,7 +42,8 @@ bool PackConfig::load(const std::string& path, PackConfig* o, std::string* err) 
   o->hubert_samples = I("hubert_samples", 0); o->hubert_frames = I("hubert_frames", 0);
   o->fcpe_samples = I("fcpe_samples", 0); o->fcpe_frames = I("fcpe_frames", 0);
   o->fcpe_bins = I("fcpe_bins", 360); o->fcpe_half_window = I("fcpe_half_window", 4);
-  o->fcpe_threshold = F("fcpe_threshold", 0.006f); o->out_samples = I("out_samples", 0);
+  o->fcpe_threshold = F("fcpe_threshold", 0.03f);
+  o->fcpe_zero_pad = I("fcpe_zero_pad", 1) != 0; o->out_samples = I("out_samples", 0);
   o->source_lin_w = F("source_lin_w", 1.f); o->source_lin_b = F("source_lin_b", 0.f);
   o->has_index = I("has_index", 0) != 0;
   if (o->sola_buffer * 10 > o->block * 10 * 4) { if (err) *err = "bad sola geometry"; return false; }
@@ -111,6 +112,8 @@ bool Engine::init(const std::string& dir, const BackendConfig& cfg, std::string*
 
   // ---- DSP state -----------------------------------------------------------
   mic_rs_ = std::make_unique<StreamResampler>(ResamplerKernel::design(1, kDeviceSr / 16000));
+  mon_rs_ = std::make_unique<StreamResampler>(ResamplerKernel::design(kDeviceSr / 16000, 1));
+  mon48_.assign(size_t(block48) * 2 + 16, 0.f);
   const int g = std::gcd(c.tgt_sr, kDeviceSr);
   out_kernel_ = ResamplerKernel::design(kDeviceSr / g, c.tgt_sr / g);
   if (size_t(c.out_samples) * (kDeviceSr / g) / (c.tgt_sr / g) != wav48_.size()) {
@@ -163,6 +166,14 @@ bool Engine::init(const std::string& dir, const BackendConfig& cfg, std::string*
   synth_.bind_input(3, noise_.data());
   synth_.bind_output(0, audio_.data());
 
+  // optional neural denoiser (48 kHz, before gate/resample); absent or failing -> spectral isolator only
+  if (std::ifstream(dir + "/denoiser_model.onnx").good()) {
+    std::string e;
+    BackendConfig dcfg = cfg; dcfg.cache_tag.clear();
+    if (!denoiser_.init(env_, dir + "/denoiser_model.onnx", dcfg, &e)) {
+      denoiser_ = NeuralDenoiser();  // leave unavailable; stats/logcat carry the reason
+    }
+  }
   ready_ = true;
   // warm-up: first HTP executions are slow (VTCM/graph init); keep that out of the stream
   std::vector<float> z(block48, 0.f), o(block48);
@@ -174,9 +185,12 @@ bool Engine::init(const std::string& dir, const BackendConfig& cfg, std::string*
 void Engine::reset() {
   std::fill(in16_.begin(), in16_.end(), 0.f);
   mic_rs_->reset();
+  mon_rs_->reset();
   sola_->reset();
   pitch_cache_.clear();
   raw_f0_.clear();
+  cond_.reset();
+  dn_active_ = false;
   iso_active_ = false;  // next process_block() re-primes the isolator
   stab_active_ = false;
 }
@@ -204,12 +218,28 @@ void Engine::process_block(const float* in48, float* out48) {
 
   // 1. gate, 48k -> 16k, slide the 16k window --------------------------------
   std::memcpy(tmp48_.data(), in48, sizeof(float) * block48);
+  const float iso = params.isolate.load(std::memory_order_relaxed);
+  const bool use_dn = iso > 0.f && denoiser_.available() && !dn_slow_off_ && block48 % NeuralDenoiser::kFrame == 0;
+  if (use_dn) {  // neural denoiser replaces the spectral isolator while the model is present
+    if (!dn_active_) { denoiser_.reset(); dn_active_ = true; }
+    denoiser_.set_strength(iso);
+    const auto td = Clock::now();
+    denoiser_.process(tmp48_.data(), block48);
+    // too slow for this phone (> 40 % of the block for 3 blocks in a row): fall back to the light spectral isolator
+    // instead of making the whole stream choppy; switching Voice isolation off and on again retries.
+    dn_slow_cnt_ = ms_since(td) > 0.4f * float(c.block * 10) ? dn_slow_cnt_ + 1 : 0;
+    if (dn_slow_cnt_ >= 3) { dn_slow_off_ = true; dn_active_ = false; }
+  } else {
+    dn_active_ = false;
+    if (iso <= 0.f) { dn_slow_off_ = false; dn_slow_cnt_ = 0; }
+  }
+  if (block48 % InputConditioner::kFrame == 0)  // blip gate (follows Voice isolation), before the absolute gate
+    cond_.process(tmp48_.data(), block48, std::min(iso, 1.f));
   const float gate = params.gate_db.load(std::memory_order_relaxed);
   if (gate > -60.f) noise_gate(tmp48_.data(), block48, kDeviceZc, gate);
   const size_t n16 = std::min(mic_rs_->process(tmp48_.data(), block48, tmp16_.data()), in16_.size());
   {  // voice-only noise suppression (adds VoiceIsolator::latency_samples() = 20 ms while on)
-    const float iso = params.isolate.load(std::memory_order_relaxed);
-    if (iso > 0.f) {
+    if (iso > 0.f && !use_dn) {
       if (!iso_active_) { isolator_.reset(); iso_active_ = true; }
       isolator_.set_strength(iso);
       isolator_.process(tmp16_.data(), n16);
@@ -235,14 +265,14 @@ void Engine::process_block(const float* in48, float* out48) {
   // pitch post-processing -> rolling cache -> window-aligned tails
   t = Clock::now();
   fcpe_decode(latent_.data(), c.fcpe_frames, c.fcpe_bins, cents_.data(), c.fcpe_threshold,
-              c.fcpe_half_window, f0raw_.data());
+              c.fcpe_half_window, c.fcpe_zero_pad, f0raw_.data());
   const float pstab = params.pitch_stab.load(std::memory_order_relaxed);
   if (pstab > 0.f && c.fcpe_frames >= 12) {
     if (!stab_active_) { raw_f0_.clear(); stab_active_ = true; }
     raw_f0_.shift(int(n16 / 160));
-    float hist[24];
-    raw_f0_.tail_f0(24, hist);  // hist[0..9) = the frames that precede this block's frame 0
-    stabilize_f0(f0raw_.data(), c.fcpe_frames, hist, 9, pstab);
+    std::vector<float> hist(size_t(c.fcpe_frames) + 8);
+    raw_f0_.tail_f0(c.fcpe_frames + 8, hist.data());  // hist[0..9) = the frames that precede this block's frame 0
+    stabilize_f0(f0raw_.data(), c.fcpe_frames, hist.data(), 9, pstab);
     raw_f0_.write_tail(nullptr, f0raw_.data() + 3, c.fcpe_frames - 4);
   } else {
     stab_active_ = false;
@@ -266,7 +296,14 @@ void Engine::process_block(const float* in48, float* out48) {
       std::memcpy(blend_pre_.data(), f, cnt * sizeof(float));
       const auto tb = Clock::now();
       index_.blend(f, total - first, rate, 2);
-      index_ms_.store(ms_since(tb), std::memory_order_relaxed);
+      const float ims = ms_since(tb);
+      index_ms_.store(ims, std::memory_order_relaxed);
+      {  // keep k-NN under 25 % of the block time: coarser sampling of the index when it is too slow
+        const float budget = 0.25f * float(c.block * 10);
+        const int st = index_.stride();
+        if (ims > budget) index_.set_stride(int(st * std::min(ims / budget, 2.f)) + 1);
+        else if (st > 1 && ims * float(st) / float(st - 1) < 0.7f * budget) index_.set_stride(st - 1);
+      }
       double num = 0, den = 0;  // how far the retrieved neighbours moved the features
       for (size_t i = 0; i < cnt; ++i) { const double d = double(f[i]) - double(blend_pre_[i]); num += d * d; den += double(blend_pre_[i]) * blend_pre_[i]; }
       index_shift_.store(float(std::sqrt(num / (den + 1e-12))), std::memory_order_relaxed);
@@ -294,6 +331,13 @@ void Engine::process_block(const float* in48, float* out48) {
   t = Clock::now();
   resample_block(out_kernel_, audio_.data(), audio_.size(), wav48_.data(), wav48_.size());
   sola_->process(wav48_.data(), out48);
+  if (params.monitor_input.load(std::memory_order_relaxed)) {  // hear exactly what the changer is fed
+    const size_t m = std::min(mon_rs_->process(tmp16_.data(), n16, mon48_.data()), mon48_.size());
+    std::memset(out48, 0, sizeof(float) * block48);
+    std::memcpy(out48, mon48_.data(), sizeof(float) * std::min<size_t>(m, size_t(block48)));
+  } else {
+    mon_rs_->reset();
+  }
   last_.post = ms_since(t);
   last_.total = ms_since(t_start);
 }

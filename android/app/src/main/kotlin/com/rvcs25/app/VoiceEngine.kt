@@ -36,7 +36,10 @@ object VoiceEngine {
 
     fun gateDb(): Float = if (gate == 0) -60f else -(60f - gate)
 
+    @Volatile var monitorInput = false   // not persisted on purpose: never starts a call muted
+
     fun pushParams() {
+        NativeBridge.nativeSetMonitor(monitorInput)
         if (!loaded) return
         NativeBridge.nativeSetParams(pitch.toFloat(), index / 100f, gateDb(), synthNoise)
         NativeBridge.nativeSetCleanup(Settings.voiceIsolation, Settings.pitchStabilize)

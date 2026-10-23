@@ -1,0 +1,69 @@
+name: Build slim APK (no baked models)
+# Actions tab -> "Build slim APK (no baked models)" -> Run workflow.
+# Compiles the app only: no Python, no model export, nothing baked into the APK, so it takes minutes instead of hours
+# and the APK is small. The app downloads the base models on first use from your latest FULL release
+# (the one made by "Build base models + APK"), or you can adb push them (see README).
+# The APK is signed with the same key as the full build, so slim and full builds install over each other.
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "debug = app-debug.apk (debuggable: adb run-as works); release = RvcS25-slim.apk"
+        type: choice
+        options: [debug, release]
+        default: debug
+      publish_release:
+        description: "Also publish a GitHub release (marked NOT latest, so model downloads keep using your full release). Off = just the downloadable artifact."
+        type: boolean
+        default: false
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make sure no models are baked in
+        run: |
+          rm -rf android/app/src/main/assets/base
+          test ! -e android/app/src/main/assets/base && echo "no baked models"
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: android-actions/setup-android@v3
+        with:
+          # Same as the full build: the runner already ships the SDK; this just accepts licenses.
+          packages: ''
+      - name: Native libs (ONNX Runtime + QNN)
+        run: bash scripts/fetch_ort.sh
+      - name: Signing key (optional secrets KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD)
+        env: { KS: "${{ secrets.KEYSTORE_BASE64 }}" }
+        run: |
+          if [ -n "$KS" ]; then
+            echo "$KS" | base64 -d > "$RUNNER_TEMP/ci.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/ci.jks" >> "$GITHUB_ENV"
+            echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> "$GITHUB_ENV"
+          fi
+      - name: Build APK
+        working-directory: android
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          chmod +x gradlew
+          ./gradlew ${{ inputs.build_type == 'release' && 'assembleRelease' || 'assembleDebug' }} --no-daemon -Dorg.gradle.jvmargs=-Xmx3g
+      - name: Collect APK
+        run: |
+          mkdir -p out
+          if [ "${{ inputs.build_type }}" = "release" ]; then
+            cp android/app/build/outputs/apk/release/*.apk out/RvcS25-slim.apk; echo "APK=RvcS25-slim.apk" >> "$GITHUB_ENV"
+          else
+            cp android/app/build/outputs/apk/debug/*.apk out/app-debug-slim.apk; echo "APK=app-debug-slim.apk" >> "$GITHUB_ENV"
+          fi
+          ls -lh out
+      - uses: actions/upload-artifact@v4
+        with: { name: apk-slim, path: "out/${{ env.APK }}", compression-level: 0 }
+      - name: Publish release (optional, never marked latest)
+        if: ${{ inputs.publish_release }}
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: gh release create "slim-${{ github.run_number }}" "out/${{ env.APK }}" --latest=false --title "Callboard slim build ${{ github.run_number }}" --notes "${{ env.APK }} has no base models baked in; the app downloads them on first use from the latest full release."

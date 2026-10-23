@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "denoiser.h"
+#include "leveler.h"
 #include "cleanup.h"
 #include "dsp.h"
 #include "ort_graph.h"
@@ -21,7 +23,8 @@ struct PackConfig {
   int flow_head = 26, dec_head = 24;
   int hubert_samples = 10560, hubert_frames = 32;
   int fcpe_samples = 2400, fcpe_frames = 16, fcpe_bins = 360, fcpe_half_window = 4;
-  float fcpe_threshold = 0.006f;
+  float fcpe_threshold = 0.03f;
+  bool fcpe_zero_pad = true;  // RMVPE decode (RVC to_local_average_cents); false = torchfcpe clamp
   int out_samples = 6000;
   float source_lin_w = 1.f, source_lin_b = 0.f;
   bool has_index = false;
@@ -35,6 +38,7 @@ struct RuntimeParams {
   std::atomic<float> gate_db{-60.f};       // input noise gate; <= -60 disables
   std::atomic<bool> synth_noise{true};     // false = deterministic, slightly cleaner
   std::atomic<float> isolate{0.f};         // 0 = off, 0..1 voice-only noise suppression on the 16 kHz mic stream (+20 ms)
+  std::atomic<bool> monitor_input{false};  // output = the mic signal fed to the changer (after denoise/gate/isolation), RVC muted
   std::atomic<float> pitch_stab{0.f};      // 0 = off, 0..1 f0 octave/spike rejection + smoothing
   std::atomic<float> mic_gain{1.f};        // linear input gain, applied by VoiceSession before the engine sees the mic
 };
@@ -85,12 +89,17 @@ class Engine {
   RetrievalIndex index_;
   BackendConfig cfg_;
 
-  std::unique_ptr<StreamResampler> mic_rs_;
+  std::unique_ptr<StreamResampler> mic_rs_, mon_rs_;  // mon_rs_: 16k -> 48k for the input monitor
+  std::vector<float> mon48_;
   ResamplerKernel out_kernel_;
   std::unique_ptr<Sola> sola_;
   PitchCache pitch_cache_;
   PitchCache raw_f0_{256};      // stabilised f0 before interpolation/key shift, aligned with pitch_cache_
   VoiceIsolator isolator_;
+  NeuralDenoiser denoiser_;
+  InputConditioner cond_;
+  bool dn_active_ = false, dn_slow_off_ = false;
+  int dn_slow_cnt_ = 0;
   bool iso_active_ = false, stab_active_ = false;
   Rng rng_;
 

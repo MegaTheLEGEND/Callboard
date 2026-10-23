@@ -8,6 +8,7 @@ class RvcApp : Application() {
         super.onCreate()
         Settings.init(this)
         Voices.init(this)
+        Sounds.init(this)
         link = ShizukuLink(this).also { it.start() }
     }
 

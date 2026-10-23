@@ -119,7 +119,7 @@ void sine_excitation(const float* f0, int L, int sr, int upp, float lin_w, float
 
 // --------------------------------------------------------------------- pitch
 void fcpe_decode(const float* latent, int frames, int bins, const float* cents,
-                 float threshold, int half_window, float* f0_out) {
+                 float threshold, int half_window, bool zero_pad, float* f0_out) {
   for (int t = 0; t < frames; ++t) {
     const float* y = latent + size_t(t) * bins;
     int im = 0;
@@ -129,7 +129,9 @@ void fcpe_decode(const float* latent, int frames, int bins, const float* cents,
     if (mx <= threshold) { f0_out[t] = 0.f; continue; }
     float num = 0.f, den = 0.f;
     for (int o = -half_window; o <= half_window; ++o) {
-      const int i = std::min(std::max(im + o, 0), bins - 1);  // torchfcpe clamps
+      int i = im + o;
+      if (zero_pad) { if (i < 0 || i >= bins) continue; }        // RVC rmvpe: zero-padded window
+      else i = std::min(std::max(i, 0), bins - 1);               // torchfcpe clamps
       num += cents[i] * y[i];
       den += y[i];
     }

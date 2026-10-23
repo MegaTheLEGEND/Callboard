@@ -83,7 +83,13 @@ object Settings {
     // ---- voice library -------------------------------------------------------------
     var voiceId by StrPref("voiceId", "")
     /** GitHub "owner/repo" (or a full release-download link) that holds the base models built by the workflow. */
-    var baseUrl by StrPref("baseUrl", "")
+    var baseUrl by StrPref("baseUrl", "MegaTheLEGEND/Callboard")
+
+    // ---- soundboard ----------------------------------------------------------------------------
+    /** How loud soundboard clips are in the call, percent (100 = as recorded). */
+    var sbLevel by IntPref("sbLevel", 100, 25, 300)
+    /** Also play soundboard clips on the phone's loudspeaker. */
+    var sbSpeaker by BoolPref("sbSpeaker", true)
 
     // ---- plumbing ------------------------------------------------------------------------------
     private class BoolPref(val key: String, val def: Boolean) : ReadWriteProperty<Any?, Boolean> {

@@ -3,6 +3,8 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <algorithm>
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -19,6 +21,9 @@ class RetrievalIndex {
   bool loaded() const { return vecs_ != nullptr; }
   int count() const { return n_; }
   int dim() const { return d_; }
+  // search every stride-th vector (1 = exact). Set by the engine to keep k-NN inside its time budget.
+  void set_stride(int s) { stride_.store(std::max(1, std::min(s, 64)), std::memory_order_relaxed); }
+  int stride() const { return stride_.load(std::memory_order_relaxed); }
 
   // feats: T x d row-major (T <= 16). In place:
   //   feats = rate * sum_k w_k * neigh_k + (1 - rate) * feats
@@ -42,6 +47,7 @@ class RetrievalIndex {
   void* map_ = nullptr;
   size_t map_len_ = 0;
   int n_ = 0, d_ = 0;
+  std::atomic<int> stride_{1};
   const float* norms_ = nullptr;
   const uint16_t* vecs_ = nullptr;
 };

@@ -1,11 +1,26 @@
+# Callboard
+
+**Callboard** is a call soundboard: a dark button matrix. Add MP3s (or any audio), tap a pad, and the clip plays **into the
+phone call** (the other person hears it) **and on your loudspeaker** at the same time. The RVC voice changer below is still
+here, but it is now secondary: open it from the **Voice changer ›** button on the home screen.
+
+- **Add sound** (the dashed pad) opens the file picker; pick several at once. Clips are decoded once and stored in the app.
+- **Long-press** a pad to rename, change colour, reorder or delete it. **STOP** ends whatever is playing.
+- **Speaker: ON/OFF** turns the loudspeaker copy on or off. **Level in call** sets how loud clips are for the other person.
+- The chips at the top show whether the Shizuku helper is ready (tap it to connect) and whether you are on a call.
+  Playing into a call needs the Shizuku helper and a connected call; otherwise the clip plays on the speaker only and the app says why.
+- If the voice changer is running live, soundboard clips are mixed into it, so the two never cut each other off.
+
+---
+
 # RVC S25 — realtime voice conversion on the Galaxy S25 Ultra (Snapdragon 8 Elite NPU)
 
 A single-voice, static-shape port of [RVC](https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI)
-for realtime mic → converted-voice playback, running HuBERT, FCPE pitch and the vocoder on the
+for realtime mic → converted-voice playback, running HuBERT, RMVPE pitch and the vocoder on the
 Hexagon NPU through ONNX Runtime's QNN execution provider.
 
 ```
-mic 48k ─► resample 16k ─┬─► FCPE mel (CPU) ─► FCPE net (NPU) ─► decode/interp/coarse (CPU) ─┐
+mic 48k ─► resample 16k ─┬─► RMVPE mel (CPU) ─► RMVPE net (NPU/CPU) ─► decode/interp/coarse (CPU) ─┐
                          └─► HuBERT (NPU) ─► index blend (CPU, NEON) ────────────────────────┤
                                                                                             ▼
                                       sine excitation + noise (CPU) ─► synth: enc/flow/NSF-HiFiGAN (NPU)
@@ -61,10 +76,21 @@ Use wired/USB headphones for the lowest latency (Bluetooth adds 100+ ms) and to 
 **Base models + APK — no PC needed.** Push this project to GitHub and run *Actions → Build base models + APK*
 (`.github/workflows/build-base.yml`; ~1-2 h, free). It exports HuBERT v1/v2, FCPE and a synth template per variant, **bakes
 the ones listed in the `bake` input (default v2_40000 + v1_40000) into the APK**, builds the APK, and publishes everything as a Release.
-Install `app-debug.apk` from the release (the workflow's `build_type` input defaults to *debug*; choose *release* to get `RvcS25.apk` instead). The debug build is debuggable, so `adb shell run-as com.rvcs25.app ls files/voices` works; a debug and a release APK are signed with the same key only if you set the CI keystore secrets, otherwise uninstall one before installing the other (that clears the app's voices) (it is ~1 GB with the defaults). Voices of those types work offline immediately; any other
+Install `app-debug.apk` from the release (the workflow's `build_type` input defaults to *debug*; choose *release* to get `RvcS25.apk` instead). The debug build is debuggable, so `adb shell run-as com.rvcs25.app ls files/voices` works. (it is ~1 GB with the defaults). Voices of those types work offline immediately; any other
 type is fetched on demand from the same release: in the app, *Voices → Base models*, enter `owner/repo`.
-Optional secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` keep the signing key stable between builds,
-so a new APK installs over the old one and keeps your voices (without them each build has a new key: uninstall first).
+**Updating without reinstalling.** Every build (local or CI, debug or release) is signed with the key in
+`android/signing/rvcs25.jks` and gets an ever-increasing `versionCode`, so a new APK installs **over** the old one and keeps
+your voices and settings: just open the new APK (or `adb install -r app-debug.apk`). Only the very first install after this
+change needs an uninstall (the old builds used a different, random key). Debug and release builds also install over each other.
+The keystore is committed on purpose (personal sideload app; password `rvcs25app`, alias `rvcs25`). If the repo is public and you
+don't want others to be able to sign "updates" for your install, replace it with your own key via the optional secrets
+`KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` (and use that key for every build from then on).
+**Slim APK (no baked models).** Actions tab → *Build slim APK (no baked models)* → Run workflow. It only compiles the app, with no
+model export, so it finishes in minutes and the APK is small. The soundboard works straight away; the voice changer downloads the base
+models on first use from your latest *full* release, so run *Build base models + APK* at least once. Slim and full builds share the signing
+key and install over each other. The optional "publish release" box makes a release that is never marked *latest*, so model downloads keep
+pointing at your full release.
+
 Prefer doing it by hand? `python export/build_base.py --hubert-dir assets/hubert_base --out base/` and
 `adb push base /sdcard/Android/data/com.rvcs25.app/files/base` works too (variants: `--variants v2_48000 ...`, `--from-pth model.pth`).
 The script self-tests each template (random weights injected by name must reproduce PyTorch).
@@ -112,7 +138,10 @@ Both run inside the engine (`engine/src/cleanup.cpp`), are on by default (50 % /
 * **Pitch stabiliser** — post-processes the FCPE track before unvoiced interpolation: drops f0 outside 50–1100 Hz, folds octave
   errors, rejects isolated jumps (tolerance widens the longer pitch was missing), then a 3/5-point median and light smoothing.
   Tracks glides and normal intonation; very high values flatten expressive pitch.
-* RMVPE is a *pitch extractor* (an alternative to FCPE), not a noise suppressor; this app uses FCPE.
+* **Neural denoiser** — if `denoiser_model.onnx` (streaming DeepFilterNet-style, 480-sample frames @48 kHz) is in the voice/base folder, the
+  *Voice isolation* slider drives it instead of the spectral suppressor (strength → max attenuation 6–60 dB, ≥95 % = unlimited). It runs on the
+  CPU at 48 kHz before the gate/resampler (~3 ms per 10 ms frame on x86; adds roughly one STFT window of delay). Without the file the spectral one is used.
+* **Pitch is RMVPE** (`rmvpe.pt`, RVC decode: threshold 0.03, zero-padded ±4-bin local average). Graph/file names stay `fcpe_*` for compatibility.
 
 Host test: `cmake --build build && ctest -R cleanup`.
 

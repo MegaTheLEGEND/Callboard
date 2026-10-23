@@ -283,6 +283,12 @@ JNIEXPORT void JNICALL Java_dev_callboard_rvc_NativeBridge_nativeSetCleanup(JNIE
   g.engine->params.pitch_stab = std::min(std::max(pitch_stab_pct, 0), 100) / 100.f;
 }
 
+// Monitor: play the changer's input instead of the converted voice.
+JNIEXPORT void JNICALL Java_dev_callboard_rvc_NativeBridge_nativeSetMonitor(JNIEnv*, jobject, jboolean on) {
+  if (!g.engine) return;
+  g.engine->params.monitor_input = on == JNI_TRUE;
+}
+
 // Mic gain in dB (0 = unchanged). Applied to every mic source before the engine; safe to call any time.
 JNIEXPORT void JNICALL Java_dev_callboard_rvc_NativeBridge_nativeSetMicGain(JNIEnv*, jobject, jfloat db) {
   if (!g.engine) return;

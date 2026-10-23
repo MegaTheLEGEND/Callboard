@@ -15,7 +15,7 @@ import android.widget.TextView
 
 /**
  * All options in one place, grouped and explained. Every change is saved immediately
- * (see [Settings]) and picked up by MainActivity when you come back.
+ * (see [Settings]) and picked up by RvcActivity when you come back.
  */
 class SettingsActivity : Activity() {
     private lateinit var root: LinearLayout
@@ -224,6 +224,12 @@ class SettingsActivity : Activity() {
     }
 
     private fun pickInputDevice() {
+        if (checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            // paired Bluetooth devices (smartwatch...) can only be listed with “Nearby devices”
+            requestPermissions(arrayOf(android.Manifest.permission.BLUETOOTH_CONNECT), 7)
+            android.widget.Toast.makeText(this, "Allow “Nearby devices”, then open this list again to see paired Bluetooth devices.", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
         val devs = AudioInputs.list(this)
         val names = listOf("Automatic (system default)") + AudioInputs.labels(devs)
         val cur = AudioInputs.selected(this)?.let { s -> devs.indexOfFirst { it.key == s.key } + 1 } ?: 0

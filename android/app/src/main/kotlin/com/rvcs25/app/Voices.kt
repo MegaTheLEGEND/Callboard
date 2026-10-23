@@ -97,6 +97,7 @@ object Voices {
             link("fcpe_mel.onnx", File(base, "fcpe_mel.onnx"))
             link("fcpe_net.onnx", File(base, "fcpe_net.onnx"))
             File(base, "fcpe_cents.f32").copyTo(File(dir, "fcpe_cents.f32"))
+            File(base, "denoiser_model.onnx").takeIf { it.exists() }?.let { link("denoiser_model.onnx", it) }  // optional neural denoiser
             // The manifest drives the NPU cache tags: HuBERT/FCPE reuse their compiled graphs across voices,
             // the synth is keyed by template + this voice's weights.
             // "baked1" in the key invalidates NPU caches compiled from the old (placeholder-weight) synth.
@@ -139,7 +140,7 @@ object Voices {
     }
 
     private fun releaseUrl(): String {
-        val b = Settings.baseUrl.trim()
+        val b = Settings.baseUrl.trim().ifEmpty { "MegaTheLEGEND/Callboard" }
         if (b.isEmpty()) throw Exception("Base models are not on this phone yet. Enter your GitHub repo (owner/name) under “Base models” " +
             "after running its “Build base models” workflow — or adb push the base folder (see README).")
         val u = if (Regex("^[\\w.-]+/[\\w.-]+$").matches(b)) "https://github.com/$b/releases/latest/download/" else b
@@ -149,12 +150,14 @@ object Voices {
     /** Gets whatever this voice type needs (HuBERT for its version, FCPE, its synth template): from the models baked
      *  into the APK if present, otherwise from the GitHub release. Already-present files are never touched. */
     private fun ensureBase(ver: String, key: String, say: (String) -> Unit) {
-        val need = listOf("hubert_$ver.onnx", "fcpe_mel.onnx", "fcpe_net.onnx", "fcpe_cents.f32", "templates/$key/synth.onnx",
+        val bundled = runCatching { JSONObject(app.assets.open("base/manifest.json").bufferedReader().use { it.readText() }) }.getOrNull()
+        // Slim build (nothing baked in): also try to fetch the denoiser; it is skipped quietly if the release has none.
+        val wantDn = bundled == null || bundled.has("denoiser_model.onnx")
+        val need = listOfNotNull("denoiser_model.onnx".takeIf { wantDn }) + listOf("hubert_$ver.onnx", "fcpe_mel.onnx", "fcpe_net.onnx", "fcpe_cents.f32", "templates/$key/synth.onnx",
             "templates/$key/template.params", "templates/$key/template.config", "templates/$key/template.cfg")
         base.mkdirs()
         val local = baseManifest()
         if (need.all { File(base, it).exists() && local.has(it) }) return
-        val bundled = runCatching { JSONObject(app.assets.open("base/manifest.json").bufferedReader().use { it.readText() }) }.getOrNull()
         var remote: JSONObject? = null; var url = ""
         for (rel in need) {
             val dest = File(base, rel)
@@ -176,7 +179,7 @@ object Voices {
                     remote = JSONObject(String(fetchBytes(url + "manifest.json")))
                 }
                 val e = remote.optJSONObject(rel)
-                    ?: throw Exception("This build has no $rel. Re-run the “Build base models + APK” workflow with variant $key.")
+                    ?: if (rel == "denoiser_model.onnx") continue else throw Exception("This build has no $rel. Re-run the “Build base models + APK” workflow with variant $key.")
                 fetchFile(url + e.getString("asset"), dest, e.getString("sha256")) { say("Downloading base model $rel… $it") }
                 local.put(rel, e); saveManifest(local)
             }

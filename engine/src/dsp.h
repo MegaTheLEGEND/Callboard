@@ -51,7 +51,7 @@ void sine_excitation(const float* f0, int L, int sr, int upp, float lin_w, float
 // ------------------------------------------------------------------- pitch
 // FP32 FCPE 'local_argmax' decode: latent[frames][bins] -> f0 Hz (0 = unvoiced).
 void fcpe_decode(const float* latent, int frames, int bins, const float* cent_table,
-                 float threshold, int half_window, float* f0_out);
+                 float threshold, int half_window, bool zero_pad, float* f0_out);
 
 // np.interp-style fill of unvoiced (==0) frames; no-op if nothing is voiced.
 void interp_unvoiced(float* f0, int n);
