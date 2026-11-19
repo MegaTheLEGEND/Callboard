@@ -1,3 +1,9 @@
+# Notice for humans from a human:
+
+I directed an AI agent to create this software. I like to disclose when i make something using AI, this is one of those things. I stumbled across [android-voice-sip-agent
+](https://github.com/sparkcyf/android-voice-sip-agent) in which the figured out how to inject audio into call on android. This made me curious if I could make an app like a sound board button app, for a live phone call on the same device. It works on my s25  ultra. I also included an RVC voice changer.  
+
+
 # CallBoard
 
 **CallBoard** is a call soundboard: a dark button matrix. Add MP3s (or any audio), tap a pad, and the clip plays **into the
